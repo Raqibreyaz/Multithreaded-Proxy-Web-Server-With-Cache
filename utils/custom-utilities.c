@@ -2,7 +2,6 @@
 // - a function which terminate program and print error message given
 // perror
 // close
-// printf
 #include "custom-utilities.h"
 
 void fatalWithClose(int fd, const char *msg)
@@ -18,13 +17,13 @@ void fatal(const char *msg)
 }
 void exitWithMessage(const char *__restrict__ msg)
 {
-    printf(msg);
+    printf("%s\n",msg);
     exit(EXIT_FAILURE);
 }
 
 void exitAndCloseWithMessage(int fd, const char *__restrict__ msg)
 {
-    printf(msg);
+    printf("%s\n",msg);
     close(fd);
     exit(EXIT_FAILURE);
 }
@@ -46,19 +45,16 @@ const char *convertBinaryIPToString(int fd, int domain, void *addr, char *buffer
 int extractNumber(const char *num, size_t len)
 {
 
-    if (num[0] < '0' || num[0] > '9')
-        return -1;
-
     int extracted_num = 0;
     int place_value = 1;
-    printf("len: %d\n", (int)len);
 
     for (int i = len - 1; i >= 0; i--)
     {
+        if (num[i] < '0' || num[i] > '9')
+            return -1;
+
         int digit = (int)(num[i] - '0');
-        printf("digit: %d\n", digit);
         extracted_num = (int)(digit * place_value + extracted_num);
-        printf("extracted num: %d \n", extracted_num);
         place_value *= 10;
     }
     return extracted_num;
@@ -71,7 +67,7 @@ char *convertNumberToString(size_t num)
 
     // taking num as string
     sprintf(strnum, "%zu", num);
-    
+
     return strnum;
 }
 

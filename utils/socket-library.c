@@ -82,7 +82,6 @@ ssize_t recvAllData(int fd, char *buffer, size_t bufferSize, int flags)
             if (contentLengthPtr)
             {
                 sscanf(contentLengthPtr, "Content-Length: %zu\r\n", &bodyLength);
-                printf("Detected content-length: %zu\n", bodyLength);
             }
 
             // if no content present then end the loop
@@ -103,12 +102,6 @@ ssize_t recvAllData(int fd, char *buffer, size_t bufferSize, int flags)
             if (bodyReceived >= bodyLength)
                 break;
         }
-    }
-
-    if (receivedBytes < 0)
-    {
-        close(fd);
-        printf("failed to receive data from client\n");
     }
 
     // last byte will be terminator
@@ -256,8 +249,6 @@ int createConnection(
             connectWithServer(cfd, temp->ai_addr, temp->ai_addrlen, 0) == -1)
             continue;
 
-        printf("connected with %s\n", hostname);
-
         // stop the loop
         break;
     }
@@ -339,56 +330,57 @@ int createServer(
     return sfd;
 }
 
-int sendWelcomeMessage(int fd, HttpResponse *response)
+int sendWelcomeMessage(int fd, HttpResponse *response, const char *httpVersion)
 {
-    initHttpResponse(response);
-
-    response->statusCode = 200;
-    strcpy(response->httpVersion, "1.1");
-    strcpy(response->statusMessage, "OK");
-
+    char responseBuffer[RESPONSE_BUFFER_SIZE];
+    ssize_t bytesSent = 0;
     char body[] = "<html><body><h1>Welcome to Proxy!</h1></body></html>";
 
-    response->headerCount = 3;
-    response->headers = malloc(response->headerCount * sizeof(HttpHeader));
+    initHttpResponse(response);
 
-    response->headers[0].key =
-        strdup("Content-Type");
-
-    response->headers[0].value =
-        strdup("text/html");
-
-    response->headers[1].key =
-        strdup("Content-Length");
-
-    response->headers[1].value =
-        convertNumberToString(strlen(body));
-
-    response->headers[2].key =
-        strdup("Connection");
-
-    response->headers[2].value =
-        strdup("close");
-
+    // create an http response
+    response->statusCode = 200;
+    strcpy(response->httpVersion, httpVersion);
+    strcpy(response->statusMessage, "OK");
     response->body = strdup(body);
+    strcpy(response->contentType, "text/html");
+    response->contentLength = (int)strlen(response->body);
+    response->isChunked = 0;
 
-    // unparse the response object into raw string
-    char *responseBuffer = unparseHttpResponse(response);
+    // parse response into string
+    int actualBufferSize = unparseHttpResponse(response, responseBuffer, RESPONSE_BUFFER_SIZE);
 
-    printf("response: %s\n", responseBuffer);
+    // send the response to client
+    bytesSent = sendMessage(fd, 0, "%s", responseBuffer);
 
-    ssize_t bytes_sent = sendMessage(fd, 0, responseBuffer);
-    // ssize_t bytes_sent = send(fd, responseBuffer, strlen(responseBuffer), 0);
+    // free the allocated space
+    freeHttpResponse(response);
 
-    if (bytes_sent > 0)
-    {
-        printf("response sent\n");
-        free(responseBuffer);
-    }
-    else
-        printf("failed to send response\n");
+    return bytesSent;
+}
+
+// send error message , returns the size of the message
+int sendErrorMessage(int fd, HttpResponse *response, const char *httpVersion, int statusCode, const char *statusMessage, const char *body)
+{
+    char responseBuffer[RESPONSE_BUFFER_SIZE];
+    ssize_t bytesSent = 0;
+
+    // zero out the response object
+    initHttpResponse(response);
+
+    response->statusCode = statusCode;
+    response->isChunked = 0;
+    response->body = strdup(body);
+    response->contentLength = (int)strlen(response->body);
+    strcpy(response->contentType, "text/plain");
+    strcpy(response->httpVersion, httpVersion);
+    strcpy(response->statusMessage, statusMessage);
+
+    int actualBufferSize = unparseHttpResponse(response, responseBuffer, RESPONSE_BUFFER_SIZE);
+
+    bytesSent = sendMessage(fd, 0, "%s", responseBuffer);
 
     freeHttpResponse(response);
 
-    return bytes_sent;
+    return bytesSent;
 }

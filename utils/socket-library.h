@@ -63,6 +63,10 @@ int createServer(
     const char *ip,
     struct sockaddr_storage *server_addr);
 
-int sendWelcomeMessage(int fd, HttpResponse *response);
+// send welcome message, returns size of the message
+int sendWelcomeMessage(int fd, HttpResponse *response,const char* httpVersion);
+
+// sends error message, returns size of the message
+int sendErrorMessage(int fd, HttpResponse *response, const char *httpVersion, int statusCode, const char *statusMessage, const char *body);
 
 #endif

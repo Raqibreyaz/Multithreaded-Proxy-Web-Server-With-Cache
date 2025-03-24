@@ -1,12 +1,24 @@
-#include <strings.h>
 #include "http-parser.h"
+
+// for request
+// char method[];
+// char host[];
+// char path[];
+// char httpVersion[];
+// char accept[];
+
+// for response
+// char httpVersion[]
+// int statusCode;
+// char statusMessage[];
+// int contentLength;
+// int isChunked;
+// char *body;
 
 // zero out the request object
 void initHttpRequest(HttpRequest *request)
 {
     memset(request, 0, sizeof(HttpRequest));
-    request->body = NULL;
-    request->headerCount = 0;
 }
 
 // zero out the response object
@@ -14,65 +26,118 @@ void initHttpResponse(HttpResponse *response)
 {
     memset(response, 0, sizeof(HttpResponse));
     response->body = NULL;
-    response->headerCount = 0;
 }
 
 // create request object from given buffer
 int parseHttpRequest(const char *requestBuffer, HttpRequest *request)
 {
+
+    if (!requestBuffer || !request)
+        return -1;
+
+    // GET / HTTP/request->httpVersion\r\n
+    // Host: request->url\r\n
+    // User-Agent: MyProxy/1.0\r\n
+    // Accept: */*\r\n
+    // Connection: close\r\n
+    // \r\n
+
     char *savePtr = NULL;
     char *requestCopy = strdup(requestBuffer);
 
+    // zero out the request object
     initHttpRequest(request);
 
-    // savePtr will now point to next section after \r\n
-    char *line = strtok_r(requestCopy, "\r\n", &savePtr);
+    // extract the method reference with \0
+    char *method = strtok_r(requestCopy, " ", &savePtr);
 
-    // extract response code and status message
-    if (!line || sscanf(line, "%7s %255s %15s", request->method, request->url, request->httpVersion) != 3)
+    // when the request is not GET then throw error
+    if (strcmp(method, "GET") != 0)
     {
         free(requestCopy);
         return -1;
     }
 
-    printf("request method: %s\nrequest url: %s\nrequest http version: %s\n", request->method, request->url, request->httpVersion);
+    // extract the path reference with \0
+    char *path = strtok_r(NULL, " ", &savePtr);
+    // extract the http-version reference with \0
+    char *httpVersion = strtok_r(NULL, "\r\n", &savePtr);
 
-    // allocating memory dynamically
-    request->headers = (HttpHeader *)malloc(MAX_HEADERS * sizeof(HttpHeader));
+    // copy the method
+    strncpy(request->method, method, strlen(method));
+    // copy the http-version
+    sscanf(httpVersion, "HTTP/%s", request->httpVersion);
 
-    // now parsing headers
-    while ((line = strtok_r(NULL, "\r\n", &savePtr)))
+    // now extract host and accept headers
+    char hostHeader[HOST_SIZE],
+        acceptHeader[ACCEPT_SIZE];
+    char *line = NULL;
+    while ((line = strtok_r(NULL, "\r\n", &savePtr)) && strlen(line) > 0)
     {
-        if (request->headerCount >= MAX_HEADERS)
-            break;
-
-        if (*line == '\0')
-            break;
-
-        // for splitting like Content-Type: text/html
-        char *colon = strchr(line, ':');
-        if (colon)
+        if (strncmp(line, "Accept:", 7) == 0)
         {
-            *colon = '\0'; // splitting key-value
-
-            // will have ex. Content-Type
-            request->headers[request->headerCount].key = strdup(line);
-
-            // will have ex. text/html
-            char *value = colon + 1;
-            while (*value == ' ')
-                value++;
-
-            request->headers[request->headerCount].value = strdup(value);
-            request->headerCount++;
+            sscanf(line, "Accept: %s", acceptHeader);
+        }
+        else if (strncmp(line, "Host:", 5) == 0)
+        {
+            sscanf(line, "Host: %s", hostHeader);
         }
     }
 
-    // now parsing body
-    request->body = savePtr && *savePtr != '\0' ? strdup(savePtr) : NULL;
-    printf("request-body: %s\n", request->body);
+    // put accept as it is
+    strncpy(request->accept, acceptHeader, ACCEPT_SIZE);
+
+    // when our home page is requested
+    if (strcmp(path, "/") == 0)
+    {
+        // host will remain as it is
+        strncpy(request->host, hostHeader, HOST_SIZE);
+        strncpy(request->path, path, PATH_SIZE);
+    }
+    // when a path is given after /
+    else if (strncmp(path, "/", 1) == 0 && strcmp(path, "/favicon.ico") != 0)
+    {
+        // point to the slash part for extracting path
+        char *slash = strchr(path + 1, '/');
+        char *host = path + 1;
+
+        int hostLen = 0;
+        int pathLen = 0;
+
+        // when there is no path then assign /
+        if (!slash)
+        {
+            // assign / to path
+            strcpy(request->path, "/");
+            // assign the host directly
+            strncpy(request->host, host, sizeof(request->host));
+            // assign the host length directly
+            hostLen = strlen(host);
+        }
+        // when there is a path exist
+        else
+        {
+            // extract the path length
+            pathLen = strlen(slash);
+            // extract the host length
+            hostLen = slash - host;
+
+            // copy the required length of host
+            strncpy(request->host, host, hostLen);
+            // copy the required length of path
+            strncpy(request->path, slash, pathLen);
+        }
+    }
+    // when invalid path is given then throw error
+    else
+    {
+        free(requestCopy);
+        return 0;
+    }
+
     free(requestCopy);
-    return 0;
+
+    return 1;
 }
 
 // create response object from given buffer
@@ -84,137 +149,70 @@ int parseHttpResponse(const char *responseBuffer, HttpResponse *response)
     // Server : Apache\r\n\r\n
     // <html> Hello World !</ html>
 
-    char *savePtr = NULL;
-    char *responseCopy = strdup(responseBuffer);
-
-    initHttpResponse(response);
-
-    // savePtr will now point to next section after \r\n
-    char *line = strtok_r(responseCopy, "\r\n", &savePtr);
-
-    // parsing status code and status message
-    if (!line || sscanf(line, "HTTP/%15s %d %[^\r\n]", response->httpVersion, &response->statusCode, response->statusMessage) != 3)
-    {
-        free(responseCopy);
-        return -1;
-    }
-
-    // dynamically allocate memory for headers
-    response->headers = (HttpHeader *)malloc(MAX_HEADERS * sizeof(HttpHeader));
-
-    // now parsing headers
-    while ((line = strtok_r(NULL, "\r\n", &savePtr)))
-    {
-        if (response->headerCount >= MAX_HEADERS)
-            break;
-
-        // check if we have reached \r\n\r\n meaning body can start now
-        if (*line == '\0')
-            break;
-
-        // for splitting like Content-Type: text/html
-        char *colon = strchr(line, ':');
-        if (colon)
-        {
-            *colon = '\0'; // splitting key-value
-
-            // will have ex. Content-Type
-            response->headers[response->headerCount].key = strdup(line);
-
-            // will have ex. text/html
-            char *value = colon + 1;
-            while (*value == ' ')
-                value++;
-
-            response->headers[response->headerCount].value = strdup(value);
-            response->headerCount++;
-        }
-    }
-
-    // now parsing body
-    response->body = savePtr && *savePtr != '\0' ? strdup(savePtr) : NULL;
-
-    free(responseCopy);
-
     return 0;
 }
 
-char *unparseHttpResponse(HttpResponse *response)
+int unparseHttpResponse(HttpResponse *response, char *responseBuffer, size_t bufferSize)
 {
+
     // HTTP/1.1 200 OK\r\n
-    // Content - Type : text / html\r\n
-    // Content - Length : 27\r\n
+    // Content-Type : text / html\r\n
+    // Content-Length : 27\r\n
+    // Server : Apache\r\n\r\n
     // <html> Hello World !</ html>
 
-    char buffer[8196];
-    int offset = 0;
+    char contentHeader[2][30];
 
-    // adding
-    // - http-version
-    // - status-code
-    // - status-message
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset, "HTTP/%s %d %s\r\n", response->httpVersion, response->statusCode, response->statusMessage);
-
-    printf("http-version: %s\nstatus-code: %d\nstatus message: %s\n", response->httpVersion, response->statusCode, response->statusMessage);
-
-    int contentLengthPresent = 0;
-
-    printf("no of headers present : %d\n", response->headerCount);
-
-    // adding headers
-    for (int i = 0; i < response->headerCount; i++)
+    if (response->isChunked)
     {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "%s: %s\r\n", response->headers[i].key, response->headers[i].value);
-
-        printf("%s: %s\n", response->headers[i].key, response->headers[i].value);
-
-        if (strcasecmp(response->headers[i].key, "Content-Length") == 0)
-            contentLengthPresent = 1;
+        strcpy(contentHeader[0], "Transfer-Encoding");
+        strcpy(contentHeader[1], "chunked");
+    }
+    else
+    {
+        strcpy(contentHeader[0], "Content-Length");
+        sprintf(contentHeader[1], "%d", response->contentLength);
     }
 
-    // add content length if not present in header
-    if (!contentLengthPresent && response->body)
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "Content-Length: %zu\r\n", strlen(response->body));
+    int bytesWritten = snprintf(responseBuffer, bufferSize,
+                                "HTTP/%s %d %s\r\n"
+                                "Content-Type: %s\r\n"
+                                "%s: %s\r\n"
+                                "Connection: close"
+                                "\r\n\r\n"
+                                "%s",
+                                response->httpVersion,
+                                response->statusCode,
+                                response->statusMessage,
+                                response->contentType,
+                                contentHeader[0],
+                                contentHeader[1],
+                                response->body);
 
-    // end headers section
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset, "\r\n");
-
-    // add body if given
-    if (response->body)
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "%s", response->body);
-
-    printf("response body: %s\n", response->body);
-
-    char *responseBuffer = malloc(offset + 1);
-    if (!responseBuffer)
-        return NULL; // Handle allocation failure
-
-    strncpy(responseBuffer, buffer, offset);
-    responseBuffer[offset] = '\0'; // Ensure null termination
-
-    return responseBuffer;
+    return bytesWritten;
 }
 
-// free the dynamically allocated props of request object
-void freeHttpRequest(HttpRequest *request)
+int unparseHttpRequest(HttpRequest *request, char *requestBuffer, size_t bufferSize)
 {
-    for (int i = 0; i < request->headerCount; i++)
-    {
-        free(request->headers[i].key);
-        free(request->headers[i].value);
-    }
-    free(request->body);
-    free(request->headers);
+
+    // create a raw request
+    int bytesWritten = snprintf(requestBuffer, bufferSize,
+                                "%s %s HTTP/%s\r\n"
+                                "Host: %s\r\n"
+                                "Accept: %s\r\n"
+                                "Connection: close\r\n"
+                                "\r\n",
+                                request->method,
+                                request->path,
+                                request->httpVersion,
+                                request->host,
+                                request->accept);
+
+    return bytesWritten;
 }
 
 // free the dynamically allocated props of response object
 void freeHttpResponse(HttpResponse *response)
 {
-    for (int i = 0; i < response->headerCount; i++)
-    {
-        free(response->headers[i].key);
-        free(response->headers[i].value);
-    }
     free(response->body);
-    free(response->headers);
 }

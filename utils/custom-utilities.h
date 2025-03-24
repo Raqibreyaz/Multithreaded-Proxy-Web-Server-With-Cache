@@ -2,7 +2,6 @@
 // - a function which terminate program and print error message given
 // perror
 // close
-// printf
 
 #ifndef CUSTOM_UTILITIES_H
 #define CUSTOM_UTILITIES_H

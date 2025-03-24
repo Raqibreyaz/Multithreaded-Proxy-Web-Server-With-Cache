@@ -2,12 +2,15 @@
 
 #define BACKLOG_SIZE 10
 
+// forward request to remote server
+// received response from server and send back to client
 int main(int argc, char const *argv[])
 {
+
     int port;
 
     if (argc < 2 || (port = extractNumber(argv[1], 4)) == -1)
-        exitWithMessage("please provide 4 digit port number\n");
+        exitWithMessage("please provide valid 4 digit port number!\n");
 
     char requestBuffer[REQUEST_BUFFER_SIZE];
     char responseBuffer[RESPONSE_BUFFER_SIZE];
@@ -17,49 +20,69 @@ int main(int argc, char const *argv[])
 
     while (1)
     {
+        int cfd;
         HttpRequest request;
         HttpResponse response;
-        ssize_t receivedBytes = 0;
+        ssize_t receivedBytes = 0, sentBytes = 0;
 
-        int cfd;
         if ((cfd = acceptClient(myFd, NULL, NULL)) == -1)
         {
-            printf("failed to connect to client");
+            printf("failed to connect to client\n");
             continue;
         }
 
-        printf("client connected %d\n", cfd);
-
-        // receive all the data from client
         if ((receivedBytes = recvAllData(cfd, requestBuffer, REQUEST_BUFFER_SIZE, 0)) < 0)
-            continue;
-
-        printf("%d bytes data received from client\n", (int)receivedBytes);
-
-        parseHttpRequest(requestBuffer, &request);
-
-        if (strcmp(request.url, "/") == 0 && sendWelcomeMessage(cfd, &response) == -1)
-            printf("failed to respond to client\n");
-
-        // chekcing if we got a website url
-        else if (strncmp(request.url, "/", 1) == 0 && strcmp(request.url, "/favicon.ico") != 0)
         {
-            printf("requested url: %s\n", request.url + 1);
-            // create a connection with that remote server
-            int sfd = createConnection(AF_INET, SOCK_STREAM, request.url + 1, "http", (struct sockaddr_storage *)&serverAddr);
-
-            sendMessage(sfd, 0, requestBuffer);
-
-            // receive response from remote server
-            receivedBytes = recvAllData(sfd, responseBuffer, RESPONSE_BUFFER_SIZE, 0);
-
-            // directly send the response recieved from the remote server
-            sendMessage(cfd, 0, "%s", responseBuffer);
-            // send(cfd, responseBuffer, receivedBytes, 0);
+            sendErrorMessage(cfd, &response, request.httpVersion, 500, "Internal Server Error", "Failed to Receive Request from Client");
+            close(cfd);
+            continue;
         }
 
-        // after sending the response free the allocated space
-        freeHttpRequest(&request);
+        int parseStatus = 0;
+        if ((parseStatus = parseHttpRequest(requestBuffer, &request)) <= 0)
+        {
+            if (parseStatus != 0)
+                sendErrorMessage(cfd, &response, request.httpVersion, 400, "Bad Request", "Invalid Request Received");
+            close(cfd);
+            continue;
+        }
+
+        // when our home page is requested then respond the home page
+        if (strncmp(request.host, "localhost", 9) == 0 && strcmp(request.path, "/") == 0)
+        {
+            sendWelcomeMessage(cfd, &response, request.httpVersion);
+        }
+
+        // when a remote page is requested
+        else if (strncmp(request.host, "localhost", 9) != 0)
+        {
+            // create raw request string from request object
+            int requestBufferSize = unparseHttpRequest(&request, requestBuffer, REQUEST_BUFFER_SIZE);
+
+            // create connection to the remote server
+            int sfd = createConnection(AF_INET, SOCK_STREAM, request.host, "http", (struct sockaddr_storage *)&serverAddr);
+
+            // forward request to remote server
+            if ((sentBytes = sendMessage(sfd, 0, "%s", requestBuffer)) == -1)
+            {
+                sendErrorMessage(cfd, &response, request.httpVersion, 500, "Internal Server Error", "Failed to Request to Remote Server");
+                close(sfd);
+                close(cfd);
+                continue;
+            }
+
+            // receive data from remote server
+            if ((receivedBytes = recvAllData(sfd, responseBuffer, RESPONSE_BUFFER_SIZE, 0)) == -1)
+            {
+                sendErrorMessage(cfd, &response, request.httpVersion, 500, "Internal Server Error", "Failed to Receive Data from Remote Server!\n");
+                close(sfd);
+                close(cfd);
+                continue;
+            }
+            // now send the data back to client
+            sendMessage(cfd, 0, "%s", responseBuffer);
+        }
+
         close(cfd);
     }
 
