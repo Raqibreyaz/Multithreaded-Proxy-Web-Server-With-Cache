@@ -10,8 +10,8 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netdb.h>
-#include "http-parser.h"
-#include "custom-utilities.h"
+#include "../http-parser/http-parser.h"
+#include "../utils/custom-utilities.h"
 
 #define REQUEST_BUFFER_SIZE 8196
 #define RESPONSE_BUFFER_SIZE 8196
@@ -64,7 +64,7 @@ int createServer(
     struct sockaddr_storage *server_addr);
 
 // send welcome message, returns size of the message
-int sendWelcomeMessage(int fd, HttpResponse *response,const char* httpVersion);
+int sendWelcomeMessage(int fd, HttpResponse *response, const char *httpVersion);
 
 // sends error message, returns size of the message
 int sendErrorMessage(int fd, HttpResponse *response, const char *httpVersion, int statusCode, const char *statusMessage, const char *body);

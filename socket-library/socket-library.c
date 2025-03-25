@@ -50,6 +50,7 @@ ssize_t recvMessage(int fd, int flags, char *buffer, size_t bufferSize)
     return bytes_read;
 }
 
+// receive all the stream data from client/server
 ssize_t recvAllData(int fd, char *buffer, size_t bufferSize, int flags)
 {
     ssize_t usedSize = bufferSize - 1;

@@ -8,7 +8,6 @@
 #include <string.h>
 #include <strings.h>
 
-#define MAX_HEADERS 20
 #define METHOD_SIZE 8
 #define HOST_SIZE 256
 #define PATH_SIZE 512
@@ -28,10 +27,12 @@ typedef struct
 
 typedef struct
 {
-    char httpVersion[HTTP_VERSION_SIZE];
     int statusCode;
+    char httpVersion[HTTP_VERSION_SIZE];
     char statusMessage[STATUS_MESSAGE_SIZE];
     char contentType[CONTENT_TYPE_SIZE];
+    char host[HOST_SIZE];
+    char path[PATH_SIZE];
     int contentLength;
     int isChunked;
     char *body;

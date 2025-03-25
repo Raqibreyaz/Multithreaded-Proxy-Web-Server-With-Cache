@@ -1,4 +1,5 @@
-#include "utils/socket-library.h"
+#include "socket-library/socket-library.h"
+#include "cache/cache-list.h"
 
 #define BACKLOG_SIZE 10
 
@@ -15,6 +16,7 @@ int main(int argc, char const *argv[])
     char requestBuffer[REQUEST_BUFFER_SIZE];
     char responseBuffer[RESPONSE_BUFFER_SIZE];
     struct sockaddr_in myAddr, serverAddr;
+    CacheNode *head = NULL;
 
     int myFd = createServer(AF_INET, SOCK_STREAM, port, BACKLOG_SIZE, "127.0.0.1", (struct sockaddr_storage *)&myAddr);
 
@@ -25,12 +27,14 @@ int main(int argc, char const *argv[])
         HttpResponse response;
         ssize_t receivedBytes = 0, sentBytes = 0;
 
+        // accept client connection
         if ((cfd = acceptClient(myFd, NULL, NULL)) == -1)
         {
             printf("failed to connect to client\n");
             continue;
         }
 
+        // receive entire request from client
         if ((receivedBytes = recvAllData(cfd, requestBuffer, REQUEST_BUFFER_SIZE, 0)) < 0)
         {
             sendErrorMessage(cfd, &response, request.httpVersion, 500, "Internal Server Error", "Failed to Receive Request from Client");
@@ -38,6 +42,7 @@ int main(int argc, char const *argv[])
             continue;
         }
 
+        // parse the http request
         int parseStatus = 0;
         if ((parseStatus = parseHttpRequest(requestBuffer, &request)) <= 0)
         {
@@ -48,43 +53,70 @@ int main(int argc, char const *argv[])
         }
 
         // when our home page is requested then respond the home page
-        if (strncmp(request.host, "localhost", 9) == 0 && strcmp(request.path, "/") == 0)
+        if (strncmp(request.host, "localhost:", 10) == 0 && strcmp(request.path, "/") == 0)
         {
             sendWelcomeMessage(cfd, &response, request.httpVersion);
         }
 
-        // when a remote page is requested
-        else if (strncmp(request.host, "localhost", 9) != 0)
+        // when a remote page is requested then respond the remote page
+        else if (strncmp(request.host, "localhost:", 10) != 0)
         {
-            // create raw request string from request object
-            int requestBufferSize = unparseHttpRequest(&request, requestBuffer, REQUEST_BUFFER_SIZE);
 
-            // create connection to the remote server
-            int sfd = createConnection(AF_INET, SOCK_STREAM, request.host, "http", (struct sockaddr_storage *)&serverAddr);
+            // find the cached response
+            HttpResponse *res = findCacheNode(head, request.host, request.path);
 
-            // forward request to remote server
-            if ((sentBytes = sendMessage(sfd, 0, "%s", requestBuffer)) == -1)
+            // if cached response found then use it
+            if (res != NULL)
             {
-                sendErrorMessage(cfd, &response, request.httpVersion, 500, "Internal Server Error", "Failed to Request to Remote Server");
-                close(sfd);
-                close(cfd);
-                continue;
+                response = *res;
+                printf("serving from cached data\n");
             }
 
-            // receive data from remote server
-            if ((receivedBytes = recvAllData(sfd, responseBuffer, RESPONSE_BUFFER_SIZE, 0)) == -1)
+            // if no cached response available the forward the request to original server
+            else
             {
-                sendErrorMessage(cfd, &response, request.httpVersion, 500, "Internal Server Error", "Failed to Receive Data from Remote Server!\n");
+                printf("no cached data available\n");
+
+                // create raw request string from request object
+                int requestBufferSize = unparseHttpRequest(&request, requestBuffer, REQUEST_BUFFER_SIZE);
+
+                // create connection to the remote server
+                int sfd = createConnection(AF_INET, SOCK_STREAM, request.host, "http", (struct sockaddr_storage *)&serverAddr);
+
+                // forward request to remote server
+                if ((sentBytes = sendMessage(sfd, 0, "%s", requestBuffer)) == -1)
+                {
+                    sendErrorMessage(cfd, &response, request.httpVersion, 500, "Internal Server Error", "Failed to Request to Remote Server");
+                    close(sfd);
+                    close(cfd);
+                    continue;
+                }
+
+                // receive data from remote server
+                if ((receivedBytes = recvAllData(sfd, responseBuffer, RESPONSE_BUFFER_SIZE, 0)) == -1)
+                {
+                    sendErrorMessage(cfd, &response, request.httpVersion, 500, "Internal Server Error", "Failed to Receive Data from Remote Server!\n");
+                    close(sfd);
+                    close(cfd);
+                    continue;
+                }
+
+                // now cache the response for future use
+                head = addCacheNode(head, &response);
+
+                // close connection from the server
                 close(sfd);
-                close(cfd);
-                continue;
             }
+
+            // create the raw response string
+            unparseHttpResponse(&response, responseBuffer, RESPONSE_BUFFER_SIZE);
+
             // now send the data back to client
             sendMessage(cfd, 0, "%s", responseBuffer);
         }
 
+        // close connection from the client
         close(cfd);
     }
-
     return 0;
 }
