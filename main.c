@@ -44,7 +44,7 @@ int main(int argc, char const *argv[])
 
         // parse the http request
         int parseStatus = 0;
-        if ((parseStatus = parseHttpRequest(requestBuffer, &request)) <= 0)
+        if ((parseStatus = parseHttpRequest(&request, requestBuffer)) <= 0)
         {
             if (parseStatus != 0)
                 sendErrorMessage(cfd, &response, request.httpVersion, 400, "Bad Request", "Invalid Request Received");
@@ -55,6 +55,7 @@ int main(int argc, char const *argv[])
         // when our home page is requested then respond the home page
         if (strncmp(request.host, "localhost:", 10) == 0 && strcmp(request.path, "/") == 0)
         {
+            printf("sending welcome message\n");
             sendWelcomeMessage(cfd, &response, request.httpVersion);
         }
 
@@ -69,19 +70,26 @@ int main(int argc, char const *argv[])
             if (res != NULL)
             {
                 response = *res;
-                printf("serving from cached data\n");
+                printf("\nserving from cached data\n");
             }
 
-            // if no cached response available the forward the request to original server
+            // if no cached response available then forward the request to original server
             else
             {
-                printf("no cached data available\n");
+                printf("\nno cached data available\n");
 
                 // create raw request string from request object
                 int requestBufferSize = unparseHttpRequest(&request, requestBuffer, REQUEST_BUFFER_SIZE);
 
                 // create connection to the remote server
-                int sfd = createConnection(AF_INET, SOCK_STREAM, request.host, "http", (struct sockaddr_storage *)&serverAddr);
+                int sfd = createConnection(AF_INET, SOCK_STREAM, request.host, "http", (struct sockaddr_storage *)&serverAddr, 0);
+
+                if (sfd == -1)
+                {
+                    sendErrorMessage(cfd, &response, request.httpVersion, 400, "Server Connection Failed", "Failed to Establish Connection with Server");
+                    close(cfd);
+                    continue;
+                }
 
                 // forward request to remote server
                 if ((sentBytes = sendMessage(sfd, 0, "%s", requestBuffer)) == -1)
@@ -101,11 +109,20 @@ int main(int argc, char const *argv[])
                     continue;
                 }
 
-                // now cache the response for future use
-                head = addCacheNode(head, &response);
-
                 // close connection from the server
                 close(sfd);
+
+                int parseStatus;
+                if ((parseStatus = parseHttpResponse(&response, responseBuffer, request.host, request.path)) <= 0)
+                {
+                    if (parseStatus != 0)
+                        sendErrorMessage(cfd, &response, request.httpVersion, 500, "Bad Response", "Bad Response Received from Server");
+                    close(cfd);
+                    continue;
+                }
+
+                // now cache the response for future use
+                head = addCacheNode(head, &response);
             }
 
             // create the raw response string
@@ -117,6 +134,9 @@ int main(int argc, char const *argv[])
 
         // close connection from the client
         close(cfd);
+
+        // freeing the allocated space
+        freeHttpResponse(&response);
     }
     return 0;
 }

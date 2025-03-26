@@ -189,7 +189,7 @@ int createConnection(
     int type,
     const char *hostname,
     const char *service,
-    struct sockaddr_storage *server_addr)
+    struct sockaddr_storage *server_addr, int exitOnFail)
 {
     // create a socket for connection
     int cfd = createSocket(domain, type, 0);
@@ -213,6 +213,9 @@ int createConnection(
     int status;
     if ((status = getaddrinfo(hostname, service, &hints, &res)) != 0)
     {
+        if (exitOnFail == 0)
+            return -1;
+
         exitAndCloseWithMessage(cfd, gai_strerror(status));
     }
 
@@ -247,7 +250,7 @@ int createConnection(
         // if tcp then try to conenct with server
         if (
             type == SOCK_STREAM &&
-            connectWithServer(cfd, temp->ai_addr, temp->ai_addrlen, 0) == -1)
+            connectWithServer(cfd, temp->ai_addr, temp->ai_addrlen, exitOnFail) == -1)
             continue;
 
         // stop the loop
@@ -353,9 +356,6 @@ int sendWelcomeMessage(int fd, HttpResponse *response, const char *httpVersion)
 
     // send the response to client
     bytesSent = sendMessage(fd, 0, "%s", responseBuffer);
-
-    // free the allocated space
-    freeHttpResponse(response);
 
     return bytesSent;
 }

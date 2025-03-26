@@ -1,5 +1,7 @@
 #include "cache-list.h"
 
+size_t cacheSize = 0;
+
 // will check if cache is full
 int isCacheFull(CacheNode *head)
 {
@@ -7,7 +9,7 @@ int isCacheFull(CacheNode *head)
 }
 
 // will check if cache is empty
-int isCacheEmpty(CacheNode *head)
+int isCacheEmpty()
 {
     return cacheSize < 1;
 }
@@ -15,6 +17,9 @@ int isCacheEmpty(CacheNode *head)
 // will initialize the cache node
 void initCacheNode(CacheNode *node)
 {
+    if (!node)
+        return;
+
     node->data = NULL;
     node->next = NULL;
     node->prev = NULL;
@@ -23,18 +28,41 @@ void initCacheNode(CacheNode *node)
 // will add the cache data to list at front
 CacheNode *addCacheNode(CacheNode *head, HttpResponse *data)
 {
-    if (head == NULL || data == NULL || isCacheFull(head))
+    if (data == NULL || isCacheFull(head))
         return NULL;
 
     // allocate space and initialize the node
     CacheNode *node = (CacheNode *)malloc(sizeof(CacheNode));
-    initCacheNode(node);
+    if (!node)
+    {
+        printf("memory allocation failed for cache node\n");
+        return NULL;
+    }
 
-    node->data = data;
+    HttpResponse *res = (HttpResponse *)malloc(sizeof(HttpResponse));
+    if (!res)
+    {
+        printf("memory allocation failed for data in cache node\n");
+        free(node);
+        return NULL;
+    }
+
+    initCacheNode(node);
+    initHttpResponse(res);
+
+    // copy the values of data to res
+    memcpy(res, data, sizeof(HttpResponse));
+    res->body = data->body ? strdup(data->body) : NULL;
+
+    node->data = res;
     node->next = head;
+    if (head)
+        head->prev = node;
 
     // increase size of cache
     cacheSize++;
+
+    printf("data added to cache\n");
 
     return node;
 }
@@ -42,31 +70,42 @@ CacheNode *addCacheNode(CacheNode *head, HttpResponse *data)
 // will remove least recently used cache from back
 CacheNode *removeCacheNode(CacheNode *tail)
 {
-    if (tail != NULL)
+    if (tail)
     {
-
         CacheNode *temp = tail;
         tail = tail->prev;
 
-        // tail can be null when there was only one node
-        if (tail != NULL)
+        if (tail)
             tail->next = NULL;
 
-        // free that node
-        free(temp);
+        if (temp->data)
+        {
+            free(temp->data->body); // Safe even if NULL
+            free(temp->data);
+        }
 
-        // decrease size of cache
+        free(temp);
         cacheSize--;
+
+        printf("data removed from cache\n");
     }
     return tail;
 }
 
 HttpResponse *findCacheNode(CacheNode *head, const char *host, const char *path)
 {
-    while (
-        head != NULL &&
-        (strcmp(head->data->host, host) != 0 || strcmp(head->data->path, path)) != 0)
+
+    if (!host || !path || host[0] == '\0' || path[0] == '\0')
+        return NULL;
+
+    while (head &&
+           head->data &&
+           head->data->host[0] != '\0' &&
+           head->data->path[0] != '\0' &&
+           (strcmp(head->data->host, host) != 0 || strcmp(head->data->path, path) != 0))
+    {
         head = head->next;
+    }
 
     // return the http response if found
     return head == NULL ? NULL : head->data;

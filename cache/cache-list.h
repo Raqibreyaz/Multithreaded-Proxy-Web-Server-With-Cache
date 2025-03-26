@@ -5,7 +5,7 @@
 
 #define MAX_CACHE_SIZE 20
 
-int cacheSize = 0;
+extern size_t cacheSize;
 
 typedef struct CacheNode
 {
@@ -15,7 +15,7 @@ typedef struct CacheNode
 } CacheNode;
 
 int isCacheFull(CacheNode *head);
-int isCacheEmpty(CacheNode *head);
+int isCacheEmpty();
 void initCacheNode(CacheNode *node);
 CacheNode *addCacheNode(CacheNode *head, HttpResponse *data);
 CacheNode *removeCacheNode(CacheNode *tail);

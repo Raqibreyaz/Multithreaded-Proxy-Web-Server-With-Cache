@@ -1,7 +1,10 @@
 #ifndef SOCKET_LIBRARY_H
 #define SOCKET_LIBRARY_H
 
-#define _POSIX_C_SOURCE 200809
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -46,7 +49,7 @@ int createConnection(
     int type,
     const char *hostname,
     const char *service,
-    struct sockaddr_storage *server_addr);
+    struct sockaddr_storage *server_addr,int exitOnFail);
 
 // listen for specified no of clients
 void listenToClient(int sfd, int nClients);

@@ -17,13 +17,13 @@ void fatal(const char *msg)
 }
 void exitWithMessage(const char *__restrict__ msg)
 {
-    printf("%s\n",msg);
+    printf("%s\n", msg);
     exit(EXIT_FAILURE);
 }
 
 void exitAndCloseWithMessage(int fd, const char *__restrict__ msg)
 {
-    printf("%s\n",msg);
+    printf("%s\n", msg);
     close(fd);
     exit(EXIT_FAILURE);
 }
@@ -44,6 +44,8 @@ const char *convertBinaryIPToString(int fd, int domain, void *addr, char *buffer
 
 int extractNumber(const char *num, size_t len)
 {
+    if (!num || num[0] == '\0')
+        return -1;
 
     int extracted_num = 0;
     int place_value = 1;

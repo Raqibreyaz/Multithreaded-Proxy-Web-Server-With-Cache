@@ -1,41 +1,44 @@
-# Compiler and Flags
 CC = gcc
-CFLAGS = -Wall -Wextra -g -MMD -MP
+CFLAGS = -Wall -Wextra -g -pthread -MMD -MP
+BUILD_DIR = build
+OBJ_DIR = $(BUILD_DIR)/obj
+BIN_DIR = $(BUILD_DIR)/bin
 
-# Directories
-OBJDIR = build
-SRCDIR = .
-UTILSDIR = utils
+# Source files
+SRC = main.c \
+      cache/cache-list.c \
+      http-parser/http-parser.c \
+      socket-library/socket-library.c \
+      utils/custom-utilities.c
 
-# Executable
+# Generate object file paths
+OBJ_FILES = $(patsubst %.c, $(OBJ_DIR)/%.o, $(SRC))
+
+# Generate dependency file paths
+DEP_FILES = $(OBJ_FILES:.o=.d)
+
+# Target executable
 TARGET = server
 
-# Source & Object Files
-SRCS = main.c utils/custom-utilities.c utils/http-parser.c utils/socket-library.c
-OBJS = $(SRCS:%.c=$(OBJDIR)/%.o)
-DEPS = $(OBJS:.o=.d)  # Dependency files for tracking changes
+# Create build directories (if they don't exist)
+$(shell mkdir -p $(OBJ_DIR) $(BIN_DIR))
 
-# Ensure build directory exists
-$(shell mkdir -p $(OBJDIR))
-
-# Build Target
-all: $(TARGET)
-
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $^ -o $@
-
-# Object File Rules
-$(OBJDIR)/%.o: %.c | $(OBJDIR)
-	@mkdir -p $(dir $@)  # Create necessary subdirectories
+# Rule to compile object files and generate dependency files
+$(OBJ_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)  # Ensure directory exists
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Ensure build directory exists before compiling
-$(OBJDIR):
-	mkdir -p $(OBJDIR)
+# Link the final executable
+$(TARGET): $(OBJ_FILES)
+	@echo "Linking Target: $(Target)"
+	$(CC) $(CFLAGS) $(OBJ_FILES) -o $(TARGET)
 
-# Include dependency files
--include $(DEPS)
+# Include dependency files if they exist
+-include $(DEP_FILES)
 
-# Clean Build
+# Clean build files
 clean:
-	rm -rf $(TARGET) $(OBJDIR)
+	rm -rf $(BUILD_DIR)
+
+# Default target
+all: $(TARGET)
