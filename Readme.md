@@ -1,68 +1,97 @@
-# 🚀 High-Performance HTTP Proxy Server
+# 🚀 High-Performance Multi-Threaded HTTP Proxy Server
 
 ## 🌍 What is it?
-A blazing-fast, multi-threaded HTTP Proxy Server that efficiently forwards client requests to remote servers, caches responses, and serves cached data for improved performance. It is designed for reliability, speed, and scalability.
+A blazing-fast, **multi-threaded HTTP Proxy Server** that forwards client requests to target servers, caches responses using an **LRU strategy**, and serves cached responses to improve performance. Built with simplicity and reliability in mind.
 
-## 🤔 Why does it exist?
-Handling HTTP requests efficiently while reducing redundant network traffic is a common challenge in networking and backend systems. This project was built to:
-- **Optimize network performance** by caching frequently requested responses.
-- **Enhance security** through request filtering and controlled forwarding.
-- **Simplify socket programming** with an intuitive **Socket Library** that abstracts low-level networking complexities.
-- **Provide a lightweight alternative** to traditional proxy solutions like Squid and Nginx.
+---
 
-## 🛠 How does it work?
-1. Listens for incoming HTTP client requests.
-2. Parses and validates the request using a custom **HTTP Parser**.
-3. Checks for cached responses to avoid redundant network requests.
-4. If not cached, forwards the request to the target server using the **Socket Library**.
-5. Receives, processes, and caches the response for future requests.
-6. Sends the response back to the client.
+## 🤔 Why this project?
+Handling HTTP traffic efficiently while reducing redundant network requests is a real-world challenge. This project was built to:
 
-## 🏗 How was it built?
-### 🔹 Custom **Socket Library**
-We implemented a **robust and efficient socket handling library** that abstracts complex networking operations, making server-client communication seamless. Features include:
-- **Easy server creation** (`createServer()`, `acceptClient()`)
-- **Effortless client connections** (`createConnection()`)
-- **Robust data transmission** (`sendMessage()`, `recvAllData()`)
+- 🔁 **Reduce bandwidth usage** by caching frequently requested responses  
+- 🔒 **Allow basic request filtering** for security and control  
+- ⚡ **Serve multiple clients concurrently** using **POSIX threads (pthreads)**  
+- 🧩 Provide a **clean abstraction** over low-level socket operations  
+- 🪶 Offer a **lightweight and educational alternative** to large proxy systems
 
-### 🔹 Custom **HTTP Parser**
-A lightweight **HTTP request and response parser** was developed to handle parsing efficiently:
-- Extracts headers, methods, URLs, and request bodies.
-- Constructs HTTP requests and responses from raw data.
-- Handles malformed or incomplete HTTP messages gracefully.
+---
 
-### 🔹 Efficient **Caching System**
-The proxy integrates a **Linked List-based caching mechanism** for quick lookups and reduced memory overhead:
-- Stores frequently requested responses.
-- Serves cached responses instantly when available.
-- Avoids redundant requests to remote servers.
+## ⚙️ How It Works
+1. Accepts HTTP client connections on a specified port.
+2. Spawns a new thread for each client connection (or uses a thread pool).
+3. Parses the request using a custom **HTTP parser**.
+4. Searches a **doubly linked list cache** for a matching response.
+5. If cached, sends the response to the client and marks it as recently used.
+6. If not cached, forwards the request to the destination server.
+7. Caches the response (with LRU eviction if necessary) and sends it to the client.
+
+---
+
+## 🧱 Tech Stack
+
+### 🔹 Custom Socket Library
+Simplifies raw socket operations with reusable abstractions:
+
+- `createServer(port)` – Starts a listening socket  
+- `acceptClient()` – Accepts incoming connections  
+- `createConnection(host, port)` – Connects to remote servers  
+- `sendMessage()` / `recvAllData()` – Handles reliable I/O  
+
+### 🔹 Custom HTTP Parser
+- Parses HTTP methods, URLs, headers, and body  
+- Gracefully handles malformed input  
+- Builds HTTP request/response objects from raw data
+
+### 🔹 🌀 LRU Caching System (O(n) Lookup)
+- Based on a **doubly linked list**  
+- Stores recently used responses  
+- Moves accessed nodes to the front (LRU strategy)  
+- Performs **O(n) linear search** on every lookup (no hashmap yet)  
+- Thread-safe via **mutex locking**
+
+> ℹ️ Future versions may upgrade to a HashMap + LinkedList combo for true **O(1)** lookup and insertion.
+
+---
+
+## 🧪 Features
+✅ **Multi-threaded architecture** using `pthread`  
+✅ **Basic LRU cache mechanism** with linked list  
+✅ **High-performance socket communication**  
+✅ **Custom HTTP request/response parsing**  
+✅ **Signal handling and graceful shutdown**  
+✅ **Extensible design for further enhancements**
+
+---
 
 ## 🚀 Getting Started
-### 📌 Prerequisites
-- Linux/macOS (recommended for socket operations)
-- GCC Compiler
 
-### 🏃‍♂️ Run the Proxy Server
-```sh
+### 📦 Prerequisites
+- Linux/macOS  
+- GCC Compiler  
+- `make` tool
+
+### 🔧 Build & Run
+```bash
 make
 ./proxy <PORT>
 ```
+
 Example:
-```sh
+```bash
 ./proxy 8080
 ```
 
-## 🛠 Features
-✅ **High-performance socket handling** with a custom socket library  
-✅ **Multi-threaded request processing** for speed  
-✅ **Custom-built HTTP parser** for fast request/response handling  
-✅ **Intelligent caching system** to optimize performance  
-✅ **Automatic error handling** for better stability  
-✅ **Modular and extensible design** for easy customization  
+---
 
 ## 🤝 Contributing
-Contributions, issues, and feature requests are welcome! Feel free to fork and improve.
+Pull requests and ideas are welcome!
 
+1. Fork this repo  
+2. Create a feature or fix branch  
+3. Submit a PR
 
-🚀 **Enjoy blazing-fast HTTP proxying!**
+---
 
+💥 **Experience raw socket programming, thread handling, and caching in C!**
+
+---
