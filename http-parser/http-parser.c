@@ -166,17 +166,17 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
 
     free(requestCopy);
 
-    // printf(
-    //     "\nmethod: %s\n"
-    //     "http-version: %s\n"
-    //     "host: %s\n"
-    //     "path: %s\n"
-    //     "accept: %s\n",
-    //     request->method,
-    //     request->httpVersion,
-    //     request->host,
-    //     request->path,
-    //     request->accept);
+    printf(
+        "\nmethod: %s\n"
+        "http-version: %s\n"
+        "host: %s\n"
+        "path: %s\n"
+        "accept: %s\n\n",
+        request->method,
+        request->httpVersion,
+        request->host,
+        request->path,
+        request->accept);
 
     return 1;
 }
@@ -315,23 +315,23 @@ int parseHttpResponse(HttpResponse *response, const char *responseBuffer, const 
 
     free(responseCopy);
 
-    // printf(
-    //     "\nhost: %s\n"
-    //     "path: %s\n"
-    //     "http-version: %s\n"
-    //     "status-code: %d\n"
-    //     "status-msg: %s\n"
-    //     "content-type: %s\n"
-    //     "content-length: %d\n"
-    //     "body: %s\n",
-    //     response->host,
-    //     response->path,
-    //     response->httpVersion,
-    //     response->statusCode,
-    //     response->statusMessage,
-    //     response->contentType,
-    //     response->contentLength,
-    //     response->body);
+    printf(
+        "\nhost: %s\n"
+        "path: %s\n"
+        "http-version: %s\n"
+        "status-code: %d\n"
+        "status-msg: %s\n"
+        "content-type: %s\n"
+        "content-length: %d\n"
+        "body: %s\n\n",
+        response->host,
+        response->path,
+        response->httpVersion,
+        response->statusCode,
+        response->statusMessage,
+        response->contentType,
+        response->contentLength,
+        response->body);
 
     return 1;
 }

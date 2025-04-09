@@ -14,11 +14,12 @@ typedef struct CacheNode
     struct CacheNode *next;
 } CacheNode;
 
-int isCacheFull(CacheNode *head);
 int isCacheEmpty();
+int isCacheFull(CacheNode *head);
 void initCacheNode(CacheNode *node);
 CacheNode *addCacheNode(CacheNode *head, HttpResponse *data);
 CacheNode *removeCacheNode(CacheNode *tail);
-HttpResponse *findCacheNode(CacheNode *head, const char *host, const char *path);
+CacheNode *findCacheNode(CacheNode *head, const char *host, const char *path);
+CacheNode *moveToHead(CacheNode *head, CacheNode *node);
 
 #endif

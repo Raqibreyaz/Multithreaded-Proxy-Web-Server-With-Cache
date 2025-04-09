@@ -92,7 +92,7 @@ CacheNode *removeCacheNode(CacheNode *tail)
     return tail;
 }
 
-HttpResponse *findCacheNode(CacheNode *head, const char *host, const char *path)
+CacheNode *findCacheNode(CacheNode *head, const char *host, const char *path)
 {
 
     if (!host || !path || host[0] == '\0' || path[0] == '\0')
@@ -108,5 +108,35 @@ HttpResponse *findCacheNode(CacheNode *head, const char *host, const char *path)
     }
 
     // return the http response if found
-    return head == NULL ? NULL : head->data;
+    return head;
+}
+
+// will return the new tail if it is updated
+CacheNode *moveToHead(CacheNode *head, CacheNode *node)
+{
+    if (!head || !node || head == node)
+        return NULL;
+
+    CacheNode *prev = node->prev;
+    CacheNode *next = node->next;
+
+    node->prev = NULL;
+    node->next = head;
+    head->prev = node;
+
+    if (next)
+    {
+        next->prev = prev;
+    }
+    else
+    {
+        printf("tail node modified\n");
+    }
+
+    if (prev)
+        prev->next = next;
+
+    printf("cache moved to head\n");
+
+    return next == NULL ? prev : NULL;
 }

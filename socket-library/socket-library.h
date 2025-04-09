@@ -13,14 +13,35 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <pthread.h>
 #include "../http-parser/http-parser.h"
 #include "../utils/custom-utilities.h"
+#include "../cache/cache-list.h"
 
 #define REQUEST_BUFFER_SIZE 8196
 #define RESPONSE_BUFFER_SIZE 8196
 
+struct ClientHandlerArg
+{
+    int cfd;
+    int *liveThreads;
+    CacheNode **head;
+    CacheNode **tail;
+    pthread_mutex_t *mtx;
+    pthread_cond_t *cond;
+};
+
+void exitCleanUp(int fd,
+                 void *arg,
+                 int *liveThreads,
+                 pthread_mutex_t *mtx,
+                 pthread_cond_t *cond,
+                 const char *requestBuffer,
+                 const char *responseBuffer);
+
 // send message to client/server
-ssize_t sendMessage(int fd, int flags, const char *format, ...);
+ssize_t
+sendMessage(int fd, int flags, const char *format, ...);
 
 // receive data from client/server
 ssize_t recvMessage(int fd, int flags, char *buffer, size_t bufferSize);
@@ -49,7 +70,7 @@ int createConnection(
     int type,
     const char *hostname,
     const char *service,
-    struct sockaddr_storage *server_addr,int exitOnFail);
+    struct sockaddr_storage *server_addr, int exitOnFail);
 
 // listen for specified no of clients
 void listenToClient(int sfd, int nClients);
@@ -65,6 +86,12 @@ int createServer(
     int backlog,
     const char *ip,
     struct sockaddr_storage *server_addr);
+
+int acceptRequest(int cfd, HttpRequest *request, char *requestBuffer);
+
+int createResponse(int cfd, HttpResponse *response, HttpRequest *request, char *responseBuffer, char *requestBuffer);
+
+void *handleClient(void *arg);
 
 // send welcome message, returns size of the message
 int sendWelcomeMessage(int fd, HttpResponse *response, const char *httpVersion);

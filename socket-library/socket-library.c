@@ -1,5 +1,23 @@
 #include "socket-library.h"
 
+void exitCleanUp(int fd,
+                 void *arg,
+                 int *liveThreads,
+                 pthread_mutex_t *mtx,
+                 pthread_cond_t *cond,
+                 const char *requestBuffer,
+                 const char *responseBuffer)
+{
+    if (fd != -1)
+        close(fd);
+
+    // decrease no of threads
+    (*liveThreads)--;
+
+    pthread_cond_signal(cond);
+    pthread_mutex_unlock(mtx);
+}
+
 ssize_t sendMessage(int fd, int flags, const char *format, ...)
 {
     va_list args;
@@ -334,6 +352,268 @@ int createServer(
     return sfd;
 }
 
+// will accept request from client and parse it to object
+int acceptRequest(int cfd, HttpRequest *request, char *requestBuffer)
+{
+    // receive entire request from client
+    if (recvAllData(cfd, requestBuffer, REQUEST_BUFFER_SIZE, 0) < 0)
+        return 500;
+
+    printf("received client request\n");
+
+    // parse the http request
+    int parseStatus = parseHttpRequest(request, requestBuffer);
+
+    return parseStatus == -1 ? 400 : parseStatus;
+}
+
+// will create a response for client using the params
+int createResponse(int cfd, HttpResponse *response, HttpRequest *request, char *responseBuffer, char *requestBuffer)
+{
+    struct sockaddr_in serverAddr;
+
+    // if no cached response available then forward the request to original server
+    printf("\nno cached data available\n");
+
+    // create raw request string from request object
+    int requestBufferSize = unparseHttpRequest(request, requestBuffer, REQUEST_BUFFER_SIZE);
+
+    // create connection to the remote server
+    int sfd = createConnection(AF_INET, SOCK_STREAM, request->host, "http", (struct sockaddr_storage *)&serverAddr, 0);
+
+    if (sfd == -1)
+    {
+        sendErrorMessage(cfd, response, request->httpVersion, 400, "Server Connection Failed", "Failed to Establish Connection with Server");
+        return -1;
+    }
+
+    printf("connected to remote server\n");
+
+    // forward request to remote server
+    if ((sendMessage(sfd, 0, "%s", requestBuffer)) == -1)
+    {
+        sendErrorMessage(cfd, response, request->httpVersion, 500, "Internal Server Error", "Failed to Request to Remote Server");
+        close(sfd);
+        return -1;
+    }
+
+    printf("requested to remote server\n");
+
+    // receive data from remote server
+    if ((recvAllData(sfd, responseBuffer, RESPONSE_BUFFER_SIZE, 0)) == -1)
+    {
+        sendErrorMessage(cfd, response, request->httpVersion, 500, "Internal Server Error", "Failed to Receive Data from Remote Server!\n");
+        close(sfd);
+        return -1;
+    }
+
+    printf("received response from remote server\n");
+
+    // close connection from the server
+    close(sfd);
+
+    int parseStatus;
+    if ((parseStatus = parseHttpResponse(response, responseBuffer, request->host, request->path)) <= 0)
+    {
+        if (parseStatus != 0)
+            sendErrorMessage(cfd, response, request->httpVersion, 500, "Bad Response", "Bad Response Received from Server");
+        return parseStatus;
+    }
+
+    return 1;
+}
+
+// will handle the receiving request to sending response to client
+void *handleClient(void *arg)
+{
+    printf("inside handle client function\n");
+    struct ClientHandlerArg *clientArg = (struct ClientHandlerArg *)arg;
+
+    int cfd = clientArg->cfd;
+
+    HttpRequest request;
+    HttpResponse response;
+    char *requestBuffer = (char *)malloc(REQUEST_BUFFER_SIZE);
+    char *responseBuffer = (char *)malloc(RESPONSE_BUFFER_SIZE);
+
+    // accept request from client
+    int requestStatus = acceptRequest(cfd, &request, requestBuffer);
+
+    printf("request accept status: %d\n", requestStatus);
+
+    // when an ignorable request received then ignore
+    if (requestStatus == 0)
+    {
+        close(cfd);
+        free(requestBuffer);
+        free(responseBuffer);
+
+        // decrease the no of live threads
+        (*(clientArg->liveThreads))--;
+
+        // signal the main to wake up if it is waiting
+        pthread_cond_signal(clientArg->cond);
+
+        free(arg);
+
+        return NULL;
+    }
+
+    // handle server side error
+    if (requestStatus == 500)
+    {
+        sendErrorMessage(cfd, &response, "1.1", requestStatus,
+                         "Internal Server Error",
+                         "Failed to Receive Request from Client");
+        close(cfd);
+        free(requestBuffer);
+        free(responseBuffer);
+
+        // decrease the no of live threads
+        (*(clientArg->liveThreads))--;
+
+        // signal the main to wake up if it is waiting
+        pthread_cond_signal(clientArg->cond);
+
+        free(arg);
+
+        return NULL;
+    }
+
+    // handle client error
+    if (requestStatus == 400)
+    {
+        sendErrorMessage(cfd, &response, "1.1", requestStatus, "Bad Request", "Invalid Request Received!");
+
+        close(cfd);
+        free(requestBuffer);
+        free(responseBuffer);
+
+        // decrease the no of live threads
+        (*(clientArg->liveThreads))--;
+
+        // signal the main to wake up if it is waiting
+        pthread_cond_signal(clientArg->cond);
+
+        free(arg);
+        return NULL;
+    }
+
+    // when our home page is requested then respond the home page
+    if (strncmp(request.host, "localhost:", 10) == 0 && strcmp(request.path, "/") == 0)
+    {
+        printf("sending welcome message\n");
+        sendWelcomeMessage(cfd, &response, request.httpVersion);
+
+        close(cfd);
+        free(requestBuffer);
+        free(responseBuffer);
+
+        // decrease the no of live threads
+        (*(clientArg->liveThreads))--;
+
+        // signal the main to wake up if it is waiting
+        pthread_cond_signal(clientArg->cond);
+
+        free(arg);
+
+        return NULL;
+    }
+
+    // lock so that no other thread could modify the list
+    pthread_mutex_lock(clientArg->mtx);
+
+    // find the cached response
+    CacheNode *res = findCacheNode(*(clientArg->head), request.host, request.path);
+
+    // if cached response found then use it
+    if (res != NULL)
+    {
+        response = *(res->data);
+
+        // move the node to head as it is recently used
+        CacheNode *newTail = moveToHead(*(clientArg->head), res);
+
+        // update the new head
+        *(clientArg->head) = res;
+
+        if (newTail)
+        {
+            *(clientArg->tail) = newTail;
+        }
+
+        printf("\nserving from cached data\n");
+    }
+
+    // otherwise create a response by connecting to remote server
+    // and cache the response
+    else
+    {
+        printf("\nrequesting remote server for response\n");
+
+        int responseStatus;
+        if ((responseStatus = createResponse(cfd, &response, &request, responseBuffer, requestBuffer)) <= 0)
+        {
+            close(cfd);
+            free(requestBuffer);
+            free(responseBuffer);
+
+            // decrease the no of live threads
+            (*(clientArg->liveThreads))--;
+
+            // signal the main to wake up if it is waiting
+            pthread_cond_signal(clientArg->cond);
+
+            // our work is done with cache so free the lock
+            pthread_mutex_unlock(clientArg->mtx);
+
+            free(arg);
+
+            return NULL;
+        }
+
+        if (isCacheFull(*(clientArg->head)))
+            *(clientArg->head) = removeCacheNode(*(clientArg->head));
+
+        // now cache the response for future use
+        *(clientArg->head) = addCacheNode(*(clientArg->head), &response);
+
+        // if tail is null then point it to head
+        if (*(clientArg->tail) == NULL)
+        {
+            printf("updating tail node\n");
+            *(clientArg->tail) = *(clientArg->head);
+        }
+    }
+
+    // decrease the no of live threads
+    (*(clientArg->liveThreads))--;
+
+    // signal the main to wake up if it is waiting
+    pthread_cond_signal(clientArg->cond);
+
+    // our work is done with cache so free the lock
+    pthread_mutex_unlock(clientArg->mtx);
+
+    // create the raw response string
+    unparseHttpResponse(&response, responseBuffer, RESPONSE_BUFFER_SIZE);
+
+    // now send the data back to client
+    sendMessage(cfd, 0, "%s", responseBuffer);
+
+    // close connection from client
+    close(cfd);
+
+    // free response body
+    freeHttpResponse(&response);
+    free(requestBuffer);
+    free(responseBuffer);
+    free(arg);
+
+    return NULL;
+}
+
+// send welcome message to client
 int sendWelcomeMessage(int fd, HttpResponse *response, const char *httpVersion)
 {
     char responseBuffer[RESPONSE_BUFFER_SIZE];
