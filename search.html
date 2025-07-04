@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Web Search</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        background: rgb(24, 44, 49);
+        color: #000;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+      }
+      .search-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+      input[type="text"] {
+        font-size: 14px;
+        padding: 6px 8px;
+        width: 80vw;
+        max-width: 600px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      input[type="submit"] {
+        font-size: 13px;
+        padding: 6px 18px;
+        border: none;
+        border-radius: 4px;
+        background: #a23db6;
+        color: #eeeff1;
+        cursor: pointer;
+      }
+      input[type="submit"]:hover {
+        background: #193d72;
+      }
+
+      h1{
+        color: white
+      }
+    </style>
+  </head>
+  <body>
+    <h1><i> Welcome To Proxy </i></h1>
+    <form action="/" method="GET" class="search-box">
+      <input type="text" name="q" placeholder="Search ..." autofocus required />
+      <input type="submit" value="Web Search" />
+    </form>
+    <script>
+      const form = document.querySelector(".search-box");
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        const formData = new FormData(form);
+        const url = formData.get("q");
+        const newWindow = window.open(`/?url=${url}`);
+      });
+    </script>
+  </body>
+</html>

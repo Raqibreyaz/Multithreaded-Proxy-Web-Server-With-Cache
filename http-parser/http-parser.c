@@ -39,7 +39,7 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
     if (!requestBuffer || requestBuffer[0] == '\0' || !request)
         return -1;
 
-    // GET / HTTP/request->httpVersion\r\n
+    // GET /?url=https://google.com/ HTTP/1.1\r\n
     // Host: request->url\r\n
     // User-Agent: MyProxy/1.0\r\n
     // Accept: */*\r\n
@@ -68,30 +68,25 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
     // extract the method reference with \0
     char *method = strtok_r(requestCopy, " ", &savePtr);
 
-    // when the request is not GET then throw error
-    if (strcmp(method, "GET") != 0)
-    {
-        free(requestCopy);
-        return -1;
-    }
-
     // extract the path reference with \0
     char *path = strtok_r(NULL, " ", &savePtr);
+
     // extract the http-version reference with \0
     char *httpVersion = strtok_r(NULL, "\r\n", &savePtr);
 
     // copy the method
     strncpy(request->method, method, strlen(method));
+
     // copy the http-version
     if (sscanf(httpVersion, "HTTP/%s", request->httpVersion) != 1)
     {
         free(requestCopy);
+        printf("failed to extract http-version!\n");
         return -1;
     }
 
     // now extract host and accept headers
-    char hostHeader[HOST_SIZE],
-        acceptHeader[ACCEPT_SIZE];
+    char hostHeader[HOST_SIZE], acceptHeader[ACCEPT_SIZE];
     char *line = NULL;
     while ((line = strtok_r(NULL, "\r\n", &savePtr)) && line != NULL)
     {
@@ -100,6 +95,7 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
             if (sscanf(line, "Accept: %s", acceptHeader) != 1)
             {
                 free(requestCopy);
+                printf("failed to extract accept header!\n");
                 return -1;
             }
         }
@@ -108,6 +104,7 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
             if (sscanf(line, "Host: %s", hostHeader) != 1)
             {
                 free(requestCopy);
+                printf("failed to extract host header!\n");
                 return -1;
             }
         }
@@ -116,61 +113,51 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
     // put accept as it is
     strncpy(request->accept, acceptHeader, ACCEPT_SIZE);
 
-    // when our home page is requested
-    if (strcmp(path, "/") == 0)
+    // when path not starts with '/' then throw error
+    if (strncmp(path, "/", 1) != 0)
+    {
+        printf("path not starts with '/'\n");
+        free(requestCopy);
+        return -1;
+    }
+
+    // when our home page or favicon.ico is requested then
+    // host and path will be same
+    if (strcmp(path, "/") == 0 || strcmp(path, "/favicon.ico"))
     {
         // host will remain as it is
         strncpy(request->host, hostHeader, HOST_SIZE);
         strncpy(request->path, path, PATH_SIZE);
     }
-    // when a path is given after /
-    else if (strncmp(path, "/", 1) == 0 && strcmp(path, "/favicon.ico") != 0)
+
+    // when query url is requested
+    else if (strncmp(path, "/?url=", 6) == 0)
     {
-        // point to the slash part for extracting path
-        char *slash = strchr(path + 1, '/');
-        char *host = path + 1;
+        // skipping the starting /?url=
+        path += 6;
 
-        int hostLen = 0;
-        int pathLen = 0;
+        // get the query url
+        char *query_url_path = get_url_path_from_query(path);
+        strcpy(request->path, query_url_path);
+        free(query_url_path);
 
-        // when there is no path then assign /
-        if (!slash)
-        {
-            // assign / to path
-            strcpy(request->path, "/");
-            // assign the host directly
-            strncpy(request->host, host, sizeof(request->host));
-            // assign the host length directly
-            hostLen = strlen(host);
-        }
-        // when there is a path exist
-        else
-        {
-            // extract the path length
-            pathLen = strlen(slash);
-            // extract the host length
-            hostLen = slash - host;
+        // get the host
+        char *query_host = get_host_from_query(path);
+        strcpy(request->host, query_host);
+        free(query_host);
 
-            // copy the required length of host
-            strncpy(request->host, host, hostLen);
-            // copy the required length of path
-            strncpy(request->path, slash, pathLen);
-        }
+        // creating the filename like url
+        int bytes_written = snprintf(request->query_url, URL_SIZE, "%s/%s", request->host, request->path);
+        request->query_url[bytes_written] = '\0';
+        sanitize_filename(request->query_url);
     }
-    // when invalid path is given then throw error
-    else
-    {
-        free(requestCopy);
-        return 0;
-    }
-
-    free(requestCopy);
 
     printf(
         "\nmethod: %s\n"
         "http-version: %s\n"
         "host: %s\n"
         "path: %s\n"
+        "query-url: %s\n"
         "accept: %s\n\n",
         request->method,
         request->httpVersion,
@@ -178,20 +165,17 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
         request->path,
         request->accept);
 
+    free(requestCopy);
     return 1;
 }
 
 // create response object from given buffer
-int parseHttpResponse(HttpResponse *response, const char *responseBuffer, const char *host, const char *path)
+int parseHttpResponse(HttpResponse *response, const char *responseBuffer)
 {
 
     if (!response ||
         !responseBuffer ||
-        !host ||
-        !path ||
-        responseBuffer[0] == '\0' ||
-        host[0] == '\0' ||
-        path[0] == '\0')
+        responseBuffer[0] == '\0')
         return -1;
 
     initHttpResponse(response);
@@ -199,44 +183,25 @@ int parseHttpResponse(HttpResponse *response, const char *responseBuffer, const 
     char *savePtr;
     char *responseCopy = strdup(responseBuffer);
 
-    if (!responseCopy)
-    {
-        printf("failed to allocate memory strdup");
-        return -1;
-    }
-    if (responseCopy[0] == '\0')
-    {
-        free(responseCopy);
-        return -1;
-    }
+    if (!responseCopy || responseCopy[0] == '\0')
+        goto catch;
 
     // extract the http version
     char *httpVersion = strtok_r(responseCopy, " ", &savePtr);
     if (sscanf(httpVersion, "HTTP/%s", response->httpVersion) != 1)
-    {
-        free(responseCopy);
-        return -1;
-    }
+        goto catch;
 
     // extract the status code
     char *statusCode = strtok_r(NULL, " ", &savePtr);
 
     if ((response->statusCode = extractNumber(statusCode, 3)) == -1)
-    {
-        free(responseCopy);
-        return -1;
-    }
+        goto catch;
 
     // extract the status message
     char *statusMessage = strtok_r(NULL, "\r\n", &savePtr);
     strcpy(response->statusMessage, statusMessage);
 
-    // add host
-    strcpy(response->host, host);
-
-    // add path
-    strcpy(response->path, path);
-
+    // reading headers
     char *line = NULL;
     while ((line = strtok_r(NULL, "\r\n", &savePtr)) && line != NULL && line[0] != '\0')
     {
@@ -251,10 +216,7 @@ int parseHttpResponse(HttpResponse *response, const char *responseBuffer, const 
         if (strncmp(line, "Content-Type:", 13) == 0)
         {
             if (sscanf(line, "Content-Type: %s", contentType) != 1)
-            {
-                free(responseCopy);
-                return -1;
-            }
+                goto catch;
 
             char *ptr = contentType;
             while (*ptr == ' ')
@@ -267,17 +229,12 @@ int parseHttpResponse(HttpResponse *response, const char *responseBuffer, const 
         if (strncmp(line, "Content-Length:", 15) == 0)
         {
             if (sscanf(line, "Content-Length: %d", &response->contentLength) != 1)
-            {
-                free(responseCopy);
-                return -1;
-            }
+                goto catch;
         }
 
         // extract the chunked encoding
         if (strncmp(line, "Transfer-Encoding:", 18) == 0)
-        {
             response->isChunked = 1;
-        }
 
         // extract location header
         if (strncmp(line, "Location:", 9) == 0)
@@ -285,10 +242,7 @@ int parseHttpResponse(HttpResponse *response, const char *responseBuffer, const 
 
             char location[URL_SIZE];
             if (sscanf(line, "Location: %s", location) != 1)
-            {
-                free(responseCopy);
-                return -1;
-            }
+                goto catch;
 
             char *ptr = location;
             while (*ptr == ' ')
@@ -304,7 +258,7 @@ int parseHttpResponse(HttpResponse *response, const char *responseBuffer, const 
     if (bodyStart)
     {
         bodyStart += 4; // skipping "\r\n\r\n"
-        if (*bodyStart)
+        if (bodyStart && *bodyStart)
         {
             free(response->body);
             response->body = strdup(bodyStart);
@@ -316,16 +270,12 @@ int parseHttpResponse(HttpResponse *response, const char *responseBuffer, const 
     free(responseCopy);
 
     printf(
-        "\nhost: %s\n"
-        "path: %s\n"
-        "http-version: %s\n"
+        "\nhttp-version: %s\n"
         "status-code: %d\n"
         "status-msg: %s\n"
         "content-type: %s\n"
         "content-length: %d\n"
         "body: %s\n\n",
-        response->host,
-        response->path,
         response->httpVersion,
         response->statusCode,
         response->statusMessage,
@@ -334,6 +284,10 @@ int parseHttpResponse(HttpResponse *response, const char *responseBuffer, const 
         response->body);
 
     return 1;
+
+catch:
+    free(responseCopy);
+    return -1;
 }
 
 int unparseHttpResponse(HttpResponse *response, char *responseBuffer, size_t bufferSize)
@@ -374,6 +328,7 @@ int unparseHttpResponse(HttpResponse *response, char *responseBuffer, size_t buf
     // conditionally add redirect url
     if (response->isRedirect)
     {
+        printf("adding redirecting url to response\n");
         bytesWritten += snprintf(responseBuffer + bytesWritten,
                                  bufferSize - bytesWritten,
                                  "Location: %s\r\n",
@@ -402,15 +357,20 @@ int unparseHttpRequest(HttpRequest *request, char *requestBuffer, size_t bufferS
     // create a raw request
     int bytesWritten = snprintf(requestBuffer, bufferSize,
                                 "%s %s HTTP/%s\r\n"
+                                "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
+                                "Accept-Encoding: gzip, deflate, br\r\n"
+                                "Accept-Language: en-US,en;q=0.9\r\n"
                                 "Host: %s\r\n"
                                 "Accept: %s\r\n"
-                                "Connection: close\r\n"
+                                "Referrer: %s\r\n"
+                                "Connection: keep-alive\r\n"
                                 "\r\n",
                                 request->method,
                                 request->path,
                                 request->httpVersion,
                                 request->host,
-                                request->accept);
+                                request->accept,
+                                request->host);
 
     return bytesWritten;
 }
@@ -418,5 +378,9 @@ int unparseHttpRequest(HttpRequest *request, char *requestBuffer, size_t bufferS
 // free the dynamically allocated props of response object
 void freeHttpResponse(HttpResponse *response)
 {
-    free(response->body);
+    if (response && response->body)
+    {
+        free(response->body);
+        response->body = NULL;
+    }
 }

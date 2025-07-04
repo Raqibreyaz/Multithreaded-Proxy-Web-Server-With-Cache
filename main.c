@@ -4,27 +4,24 @@
 
 #define BACKLOG_SIZE 10
 #define MAX_CLIENTS 10
+#define PORT 3000
 
 // forward request to remote server
 // received response from server and send back to client
 int main(int argc, char const *argv[])
 {
-    int port;
     int liveThreads = 0;
 
     // creating static mutex and cond vars
     pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
     pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
-    if (argc < 2 || (port = extractNumber(argv[1], 4)) == -1)
-        exitWithMessage("please provide valid 4 digit port number!\n");
-
     struct sockaddr_in myAddr;
     CacheNode *head = NULL;
     CacheNode *tail = NULL;
 
     // create a server at loopback address
-    int myFd = createServer(AF_INET, SOCK_STREAM, port, BACKLOG_SIZE, "127.0.0.1", (struct sockaddr_storage *)&myAddr);
+    int myFd = createServer(AF_INET, SOCK_STREAM, PORT, BACKLOG_SIZE, "127.0.0.1", (struct sockaddr_storage *)&myAddr);
 
     while (1)
     {

@@ -16,7 +16,7 @@
 #include <pthread.h>
 #include "../http-parser/http-parser.h"
 #include "../utils/custom-utilities.h"
-#include "../cache/cache-list.h"
+#include "../cache-list/cache-list.h"
 
 #define REQUEST_BUFFER_SIZE 8196
 #define RESPONSE_BUFFER_SIZE 8196
@@ -31,9 +31,27 @@ struct ClientHandlerArg
     pthread_cond_t *cond;
 };
 
+enum RESPONSE_ERROR_CODE
+{
+    SERVCONNFAIL = 1,
+    SERVREQFAIL,
+    SERVRESFAIL,
+    BADSERVRES,
+};
+
+enum REQUEST_ERROR_CODE
+{
+    CLNTREQFAIL = 5,
+    BADCLNTREQ,
+    MISQRYPRM,
+    INTRSERVERR
+};
+
 void exitCleanUp(int fd,
                  void *arg,
                  int *liveThreads,
+                 HttpRequest *request,
+                 HttpResponse *response,
                  pthread_mutex_t *mtx,
                  pthread_cond_t *cond,
                  const char *requestBuffer,
@@ -98,5 +116,7 @@ int sendWelcomeMessage(int fd, HttpResponse *response, const char *httpVersion);
 
 // sends error message, returns size of the message
 int sendErrorMessage(int fd, HttpResponse *response, const char *httpVersion, int statusCode, const char *statusMessage, const char *body);
+
+void handleSendingError(HttpResponse *response, const char *http_version, int error_code, int cfd);
 
 #endif

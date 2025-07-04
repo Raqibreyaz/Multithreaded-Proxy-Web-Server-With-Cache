@@ -1,0 +1,16 @@
+- function for getting cached entries from disk in a linked list ✅
+- function for getting blocked sites from disk in an array ✅
+- function for parsing url for: ✅
+     getting path from url ✅
+     extracting query param ✅
+     extracting host from url ✅
+- function for sanitizing domain for filename using regex ✅
+- function for checking if site is blocked ✅
+- function for searching in the linked list cache
+- function for getting time passed in mins for a file ✅
+- function for reading a file ✅
+- function for writing to a file ✅
+- function for removing ads tags from html using regex 
+- functions for modifying leading / urls, complete links, protocol-relative // url, url('') of css, 
+                                                                                            srcset attributes
+- function for injecting base tag in html using regex

@@ -2,7 +2,7 @@
 #define HTTP_PARSER_H
 
 #ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 200809L
+#define _POSIX_C_SOURCE
 #endif
 
 #include "../utils/custom-utilities.h"
@@ -25,6 +25,7 @@ typedef struct
     char method[METHOD_SIZE];
     char host[HOST_SIZE];
     char path[PATH_SIZE];
+    char query_url[URL_SIZE];
     char httpVersion[HTTP_VERSION_SIZE];
     char accept[ACCEPT_SIZE];
 } HttpRequest;
@@ -35,8 +36,6 @@ typedef struct
     char httpVersion[HTTP_VERSION_SIZE];
     char statusMessage[STATUS_MESSAGE_SIZE];
     char contentType[CONTENT_TYPE_SIZE];
-    char host[HOST_SIZE]; // used only for identification
-    char path[PATH_SIZE]; // used only for identification
     int contentLength;
     int isChunked;
     char *body;
@@ -50,7 +49,7 @@ void initHttpResponse(HttpResponse *response);
 
 int parseHttpRequest(HttpRequest *request, const char *rawRequest);
 
-int parseHttpResponse(HttpResponse *response, const char *responseBuffer, const char *host, const char *path);
+int parseHttpResponse(HttpResponse *response, const char *responseBuffer);
 
 int unparseHttpResponse(HttpResponse *response, char *responseBuffer, size_t bufferSize);
 

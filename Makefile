@@ -6,7 +6,7 @@ BIN_DIR = $(BUILD_DIR)/bin
 
 # Source files
 SRC = main.c \
-      cache/cache-list.c \
+      cache-list/cache-list.c \
       http-parser/http-parser.c \
       socket-library/socket-library.c \
       utils/custom-utilities.c
