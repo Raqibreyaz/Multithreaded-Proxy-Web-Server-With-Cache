@@ -3,7 +3,7 @@
 size_t cacheSize = 0;
 
 // will check if cache is full
-int isCacheFull(CacheNode *head)
+int isCacheFull(const CacheNode *head)
 {
     return head != NULL && cacheSize >= MAX_CACHE_SIZE;
 }
@@ -26,7 +26,7 @@ void initCacheNode(CacheNode *node)
 }
 
 // will add the url to list at head
-CacheNode *addCacheNode(CacheNode *head, const char *url, const int url_size, const char *data, const char *data_type)
+CacheNode *addCacheNode(CacheNode *head, const char *url, const int url_size, const char *data, size_t data_size, const char *data_type, size_t data_type_size)
 {
     if (url == NULL || isCacheFull(head))
         return NULL;
@@ -70,11 +70,11 @@ CacheNode *addCacheNode(CacheNode *head, const char *url, const int url_size, co
 
         // writing data
         snprintf(file_path, sizeof(file_path), "%s/%s", CACHE_DIR, url);
-        write_file(file_path, data);
+        write_file(file_path, data, data_size);
 
         // writing the type of data
         snprintf(file_path, sizeof(file_path), "%s/%s.meta", CACHE_DIR, url);
-        write_file(file_path, data_type);
+        write_file(file_path, data_type, data_type_size);
     }
 
     // increase size of cache
@@ -128,7 +128,7 @@ CacheNode *removeCacheNode(CacheNode *tail)
 }
 
 // returns the node having that url, NULL if not found
-CacheNode *findCacheNode(const CacheNode *head, const char *url)
+CacheNode *findCacheNode(CacheNode *head, const char *url)
 {
 
     if (!head || !url || url[0] == '\0')
@@ -189,8 +189,8 @@ ListPair populateCacheWithDisk()
     char full_path[1024];
     while ((de = readdir(dir)) != NULL)
     {
-        // skip unwanted entries
-        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, ".."))
+        // skip unwanted entries like '.', '..', '.meta'
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0 || strstr(de->d_name, ".meta"))
             continue;
 
         // taking the full path
@@ -211,7 +211,7 @@ ListPair populateCacheWithDisk()
             CacheNode *tmp = list_pair.head;
 
             // create and add node to the list
-            list_pair.head = addCacheNode(list_pair.head, de->d_name, strlen(de->d_name), NULL, NULL);
+            list_pair.head = addCacheNode(list_pair.head, de->d_name, strlen(de->d_name), NULL, 0, NULL, 0);
 
             // if this is 1st node then point tail to it
             if (!tmp)

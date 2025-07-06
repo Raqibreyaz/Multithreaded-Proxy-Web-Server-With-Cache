@@ -115,7 +115,7 @@ void unescape_string(char *str)
 
     while (src && *src)
     {
-        if (*src == "\\")
+        if (*src == '\\')
         {
             src++;
             switch (*src)
@@ -143,7 +143,8 @@ void unescape_string(char *str)
 // will fill the array with blocked sites and returns the no of blocked sites
 int get_blocked_sites(char *blocked_sites[], int max_items)
 {
-    const char *blocked_sites_string = read_file(BLOCKED_SITES_FILE);
+    size_t blocked_sites_file_size = 0;
+    char *blocked_sites_string = read_file(BLOCKED_SITES_FILE, &blocked_sites_file_size);
 
     // skipping the '[' and ']'
     char *start = strchr(blocked_sites_string, '[');
@@ -174,7 +175,7 @@ int get_blocked_sites(char *blocked_sites[], int max_items)
         blocked_sites[count++] = strdup(token);
 
         // moving to next token
-        token = strtok(NULL, "");
+        token = strtok(NULL, ",");
     }
 
     free(blocked_sites_string);
@@ -204,19 +205,12 @@ long time_passed_in_mins_for_file(const char *file_path)
     time_t current_time = time(NULL);
 
     // returning the time passed in minutes
-    return ceil(difftime(current_time, st.st_mtime) / 60);
+    return difftime(current_time, st.st_mtime) / 60;
 }
 
 // will read and return contents of that file, file must be present
-char *read_file(const char *file_path)
+char *read_file(const char *file_path, size_t *file_size)
 {
-    // getting stats of the file
-    struct stat st;
-    stat(file_path, &st);
-
-    // allocating the file size bytes
-    char *data = (char *)malloc(st.st_size + 1);
-
     // opening file in binary mode
     FILE *fptr = fopen(file_path, "rb");
     if (!fptr)
@@ -225,9 +219,35 @@ char *read_file(const char *file_path)
         return NULL;
     }
 
+    // getting stats of the file
+    struct stat st;
+    stat(file_path, &st);
+
+    // allocating the file size bytes
+    char *data = (char *)malloc(st.st_size + 1);
+    if (!data)
+    {
+        printf("memory allocation failed!\n");
+        fclose(fptr);
+        return NULL;
+    }
+
     // get the exact size bytes from file and \0 terminating
-    fgets(data, st.st_size, fptr);
+    size_t bytes_read = fread(data, 1, st.st_size, fptr);
     data[st.st_size] = '\0';
+
+    if (bytes_read < (size_t)st.st_size)
+    {
+
+        if (feof(fptr))
+            printf("EOF reached, data not read!\n");
+        if (ferror(fptr))
+            perror("fread error");
+    }
+
+    // storing the file size in the provided var
+    if (file_size)
+        *file_size = (size_t)st.st_size;
 
     fclose(fptr);
 
@@ -236,18 +256,18 @@ char *read_file(const char *file_path)
 }
 
 // will write the contents to the file, file will be created if not present
-void write_file(const char *file_path, const char *data)
+void write_file(const char *file_path, const char *data, size_t data_size)
 {
     // opening the file in write + binary mode
     FILE *fptr = fopen(file_path, "wb");
     if (!fptr)
     {
         printf("failed to write file: %s\n", file_path);
-        return NULL;
+        return;
     }
 
     // now write the data to the file
-    fprintf(fptr, "%s", data);
+    fwrite(data, 1, data_size, fptr);
     fclose(fptr);
 }
 
@@ -315,14 +335,113 @@ void sanitize_filename(char *file_name)
     }
 }
 
-const char const *ad_patterns[MAX_AD_PATTERNS] = {
+char *insert_base_tag(const char *html, const char *domain) {
+    const char *base_fmt = "<base href=\"/?url=%s/\">";
+    char base_tag[1024];
+    snprintf(base_tag, sizeof(base_tag), base_fmt, domain);
 
-};
+    const char *head_pos = strcasestr(html, "<head>");
+    if (!head_pos) return strdup(html); // no <head>
 
-void remove_ad_matches(char *html, const char *pattern)
-{
+    size_t pre_len = head_pos - html + strlen("<head>");
+    size_t html_len = strlen(html);
+
+    char *result = malloc(html_len + strlen(base_tag) + 1);
+    if (!result) return NULL;
+    strncpy(result, html, pre_len);
+    result[pre_len] = '\0';
+    strcat(result, base_tag);
+    strcat(result, html + pre_len);
+
+    return result;
 }
 
-void remove_ad_tags(char *html)
-{
+// Rewrite absolute URLs like href="https://..."
+char *rewrite_absolute_urls(const char *html) {
+    regex_t regex;
+    const char *pattern = "\\b(action|src|href|content|data|poster)=[\"'](https?://[^\"']+)[\"']";
+    if (regcomp(&regex, pattern, REG_EXTENDED | REG_ICASE) != 0) return strdup(html);
+
+    regmatch_t matches[3];
+    const char *cursor = html;
+    char *result = calloc(1, MAX_RESULT_LEN);
+    if (!result) return NULL;
+    size_t written = 0;
+
+    while (cursor && *cursor && regexec(&regex, cursor, 3, matches, 0) == 0) {
+        if (matches[0].rm_so < 0) break;
+
+        strncat(result + written, cursor, matches[0].rm_so);
+        written += matches[0].rm_so;
+
+        int attr_len = matches[1].rm_eo - matches[1].rm_so;
+        int url_len = matches[2].rm_eo - matches[2].rm_so;
+        if (attr_len <= 0 || url_len <= 0 || attr_len >= MAX_ATTR_LEN || url_len >= MAX_URL_LEN) break;
+
+        char attr[MAX_ATTR_LEN], url[MAX_URL_LEN];
+        strncpy(attr, cursor + matches[1].rm_so, attr_len);
+        attr[attr_len] = '\0';
+        strncpy(url, cursor + matches[2].rm_so, url_len);
+        url[url_len] = '\0';
+
+        written += snprintf(result + written, MAX_RESULT_LEN - written, "%s=\"/?url=%s\"", attr, url);
+        cursor += matches[0].rm_eo;
+    }
+
+    if (cursor) strncat(result + written, cursor, MAX_RESULT_LEN - written - 1);
+    regfree(&regex);
+    return result;
+}
+
+// Rewrite relative or protocol-relative URLs
+char *rewrite_relative_urls(const char *html, const char *domain) {
+    regex_t regex;
+    const char *pattern = "\\b(action|src|href|content|data|poster)=[\"'](?!https?:|//|data:)([^\"']+)[\"']";
+    if (regcomp(&regex, pattern, REG_EXTENDED | REG_ICASE) != 0) return strdup(html);
+
+    regmatch_t matches[3];
+    const char *cursor = html;
+    char *result = calloc(1, MAX_RESULT_LEN);
+    if (!result) return NULL;
+    size_t written = 0;
+
+    while (cursor && *cursor && regexec(&regex, cursor, 3, matches, 0) == 0) {
+        if (matches[0].rm_so < 0) break;
+
+        strncat(result + written, cursor, matches[0].rm_so);
+        written += matches[0].rm_so;
+
+        int attr_len = matches[1].rm_eo - matches[1].rm_so;
+        int path_len = matches[2].rm_eo - matches[2].rm_so;
+        if (attr_len <= 0 || path_len <= 0 || attr_len >= MAX_ATTR_LEN || path_len >= MAX_URL_LEN) break;
+
+        char attr[MAX_ATTR_LEN], path[MAX_URL_LEN];
+        strncpy(attr, cursor + matches[1].rm_so, attr_len);
+        attr[attr_len] = '\0';
+        strncpy(path, cursor + matches[2].rm_so, path_len);
+        path[path_len] = '\0';
+
+        char normalized[MAX_URL_LEN];
+        snprintf(normalized, sizeof(normalized), "%s%s", path[0] == '/' ? "" : "/", path);
+
+        written += snprintf(result + written, MAX_RESULT_LEN - written, "%s=\"/?url=%s%s\"", attr, domain, normalized);
+        cursor += matches[0].rm_eo;
+    }
+
+    if (cursor) strncat(result + written, cursor, MAX_RESULT_LEN - written - 1);
+    regfree(&regex);
+    return result;
+}
+
+// Full pipeline to rewrite an HTML document
+char *rewrite_html_to_proxy(const char *html, const char *domain) {
+    if (!html || !domain) return NULL;
+    char *step1 = insert_base_tag(html, domain);
+    if (!step1) return NULL;
+    char *step2 = rewrite_absolute_urls(step1);
+    free(step1);
+    if (!step2) return NULL;
+    char *step3 = rewrite_relative_urls(step2, domain);
+    free(step2);
+    return step3;
 }

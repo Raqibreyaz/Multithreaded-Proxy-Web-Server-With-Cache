@@ -31,14 +31,14 @@ $(OBJ_DIR)/%.o: %.c
 # Link the final executable
 $(TARGET): $(OBJ_FILES)
 	@echo "Linking Target: $(Target)"
-	$(CC) $(CFLAGS) $(OBJ_FILES) -o $(TARGET)
+	$(CC) $(CFLAGS) $(OBJ_FILES) -o $(TARGET) -lssl -lcrypto
 
 # Include dependency files if they exist
 -include $(DEP_FILES)
 
 # Clean build files
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) $(TARGET)
 
 # Default target
 all: $(TARGET)

@@ -47,9 +47,9 @@ void initHttpRequest(HttpRequest *request);
 
 void initHttpResponse(HttpResponse *response);
 
-int parseHttpRequest(HttpRequest *request, const char *rawRequest);
+int parseHttpRequest(HttpRequest *request, char *rawRequest);
 
-int parseHttpResponse(HttpResponse *response, const char *responseBuffer);
+int parseHttpResponse(HttpResponse *response, char *responseBuffer);
 
 int unparseHttpResponse(HttpResponse *response, char *responseBuffer, size_t bufferSize);
 

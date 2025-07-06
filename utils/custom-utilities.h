@@ -6,11 +6,11 @@
 #ifndef CUSTOM_UTILITIES_H
 #define CUSTOM_UTILITIES_H
 
+#include <stdio.h>
 #include <math.h>
 #include <time.h>
-#include <stdio.h>
-#include <regex.h>
 #include <ctype.h>
+#include <regex.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -18,6 +18,9 @@
 #include <arpa/inet.h>
 #define BLOCKED_SITES_FILE "blocked-sites.json"
 #define MAX_AD_PATTERNS 3
+#define MAX_URL_LEN 2048
+#define MAX_ATTR_LEN 16
+#define MAX_RESULT_LEN 65536
 
 // will print error and close the file descriptor and exit
 void fatalWithClose(int fd, const char *msg);
@@ -59,10 +62,10 @@ int is_site_blocked(const char *blocked_sites[], int n, const char *url);
 long time_passed_in_mins_for_file(const char *file_path);
 
 // will read and return contents of that file, file must be present
-char *read_file(const char *file_path);
+char *read_file(const char *file_path, size_t *file_size);
 
 // will write the contents to the file, file will be created if not present
-void write_file(const char *file_path, const char *data);
+void write_file(const char *file_path, const char *data, size_t data_size);
 
 // delete the provided file
 void delete_file(const char *file_path);
@@ -75,5 +78,13 @@ char *get_host_from_query(const char *query);
 
 // will replace all the problematic chars from filename
 void sanitize_filename(char *file_name);
+
+char *insert_base_tag(const char *html, const char *domain);
+
+char *rewrite_absolute_urls(const char *html);
+
+char *rewrite_relative_urls(const char *html, const char *domain);
+
+char *rewrite_html_to_proxy(const char *html, const char *domain);
 
 #endif

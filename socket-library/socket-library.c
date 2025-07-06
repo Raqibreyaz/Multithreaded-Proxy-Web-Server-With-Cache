@@ -7,8 +7,8 @@ void exitCleanUp(int fd,
                  HttpResponse *response,
                  pthread_mutex_t *mtx,
                  pthread_cond_t *cond,
-                 const char *requestBuffer,
-                 const char *responseBuffer)
+                 char *requestBuffer,
+                 char *responseBuffer)
 {
     // closing connection to client
     if (fd != -1)
@@ -85,6 +85,10 @@ ssize_t sendMessage(int fd, int flags, const char *format, ...)
     free(buffer);
     return bytes_sent;
 }
+int send_message_securely(SSL *ssl, char *buffer, int buffer_size)
+{
+    return SSL_write(ssl, buffer, buffer_size);
+}
 
 // handle receive via TCP
 ssize_t recvMessage(int fd, int flags, char *buffer, size_t bufferSize)
@@ -160,6 +164,65 @@ ssize_t recvAllData(int fd, char *buffer, size_t bufferSize, int flags)
 
     // when last read failed then return error
     return receivedBytes < 0 ? receivedBytes : totalReceivedBytes;
+};
+
+int recvAllDataSecurely(SSL *ssl, char *buffer, int bufferSize)
+{
+    int usedSize = bufferSize - 1;
+
+    int totalReceivedBytes = 0, receivedBytes = 0;
+
+    int headersCompleted = 0;
+    int bodyLength = 0;
+
+    // receive all the data at max bufferSize-1
+    while (totalReceivedBytes < usedSize)
+    {
+        receivedBytes = SSL_read(ssl, buffer + totalReceivedBytes, usedSize - totalReceivedBytes);
+
+        if (receivedBytes <= 0)
+            break;
+
+        totalReceivedBytes += receivedBytes;
+
+        // when headers are completed then check if body is available
+        if (!headersCompleted && strstr(buffer, "\r\n\r\n"))
+        {
+            // headers are now completed
+            headersCompleted = 1;
+
+            // now check if content length is present
+            char *contentLengthPtr = strstr(buffer, "Content-Length:");
+
+            // if content length is present then extract the length of content
+            if (contentLengthPtr)
+                sscanf(contentLengthPtr, "Content-Length: %d\r\n", &bodyLength);
+
+            // if no content present then end the loop
+            if (bodyLength == 0)
+                break;
+        }
+
+        // when headers are completed and content length exists check if we received full content of body
+        if (headersCompleted && bodyLength > 0)
+        {
+            // calculate the headers szie
+            ssize_t headersSize = strstr(buffer, "\r\n\r\n") - buffer + 4;
+
+            // calculate the amount of content of body we received
+            ssize_t bodyReceived = totalReceivedBytes - headersSize;
+
+            // if we received all the data then end the loop
+            if (bodyReceived >= bodyLength)
+                break;
+        }
+    }
+
+    // last byte will be terminator
+    buffer[totalReceivedBytes] = '\0';
+
+    // when last read failed then return error
+    return receivedBytes <= 0 ? receivedBytes : totalReceivedBytes;
 };
 
 // send message via specifically udp
@@ -409,20 +472,54 @@ int acceptRequest(int cfd, HttpRequest *request, char *requestBuffer)
     return status == -1 ? BADCLNTREQ : 1;
 }
 
+int handle_request_response(SSL *ssl, int cfd, HttpRequest *req, HttpResponse *res, char *request_buffer, char *response_buffer)
+{
+    // create raw request string from request object
+    int requestBufferSize = unparseHttpRequest(req, request_buffer, REQUEST_BUFFER_SIZE);
+
+    printf("%s\n", request_buffer);
+
+    // forward request to remote server
+    int ret_val = 1;
+    if ((ret_val = send_message_securely(ssl, request_buffer, strlen(request_buffer))) <= 0)
+    {
+        check_ssl_error(ssl, ret_val, "write");
+        return SERVREQFAIL;
+    }
+
+    printf("requested to remote server\n");
+
+    // receive data from remote server
+    int buffer_size = RESPONSE_BUFFER_SIZE;
+    ret_val = 1;
+    if ((ret_val = recvAllDataSecurely(ssl, response_buffer, buffer_size)) <= 0)
+    {
+        check_ssl_error(ssl, ret_val, "read");
+        return SERVRESFAIL;
+    }
+    response_buffer[ret_val] = '\0';
+
+    printf("received response from remote server\n");
+
+    if (parseHttpResponse(res, response_buffer) == -1)
+        return BADSERVRES;
+
+    return 1;
+}
+
 // will create a response for client using the params
 int createResponse(int cfd, HttpResponse *response, HttpRequest *request, char *responseBuffer, char *requestBuffer)
 {
-    int response_status = 1;
+    SSL_CTX *ctx = NULL;
+    SSL *ssl = NULL;
+    int response_status = 0;
     struct sockaddr_in serverAddr;
 
     // if no cached response available then forward the request to original server
     printf("\nno cached data available\n");
 
-    // create raw request string from request object
-    int requestBufferSize = unparseHttpRequest(request, requestBuffer, REQUEST_BUFFER_SIZE);
-
     // create connection to the remote server
-    int sfd = createConnection(AF_INET, SOCK_STREAM, request->host, "https", (struct sockaddr_storage *)&serverAddr, 0);
+    int sfd = createConnection(AF_INET, SOCK_STREAM, request->host, "443", (struct sockaddr_storage *)&serverAddr, 0);
 
     if (sfd == -1)
     {
@@ -430,33 +527,64 @@ int createResponse(int cfd, HttpResponse *response, HttpRequest *request, char *
         goto finally;
     }
 
-    printf("connected to remote server\n");
+    // SSL setup
+    ctx = SSL_CTX_new(TLS_client_method());
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+    ssl = SSL_new(ctx);
+    SSL_set_fd(ssl, sfd);
+    SSL_set_tlsext_host_name(ssl, request->host);
 
-    // forward request to remote server
-    if ((sendMessage(sfd, 0, "%s", requestBuffer)) == -1)
+    int ret_val = 1;
+    if ((ret_val = SSL_connect(ssl)) <= 0)
     {
-        response_status = SERVREQFAIL;
+        check_ssl_error(ssl, ret_val, "connect");
+        response_status = SERVCONNFAIL;
         goto finally;
     }
 
-    printf("requested to remote server\n");
+    printf("connected to remote server securely\n");
 
-    // receive data from remote server
-    if ((recvAllData(sfd, responseBuffer, RESPONSE_BUFFER_SIZE, 0)) == -1)
+    handle_request_response(ssl, sfd, request, response, requestBuffer, responseBuffer);
+
+    // handling redirects
+    int no_of_redirects = 0;
+    while (no_of_redirects < 3 && response->isRedirect)
     {
-        response_status = SERVRESFAIL;
-        goto finally;
+        char *redirect_path = get_url_path_from_query(response->location);
+        if (strcmp(request->path, redirect_path) != 0)
+        {
+            no_of_redirects++;
+            strcpy(request->path, redirect_path);
+            free(redirect_path);
+
+            int st;
+            if ((st = handle_request_response(ssl, sfd, request, response, requestBuffer, responseBuffer)) != 1)
+                response_status = st;
+        }
+        else
+        {
+            free(redirect_path);
+            break;
+        }
     }
 
-    printf("received response from remote server\n");
-
-    if (parseHttpResponse(response, responseBuffer) == -1)
-        response_status = BADSERVRES;
+    if (response->isRedirect)
+    {
+        printf("max redirection limit reached!\n");
+        response_status = REDIRERR;
+        goto finally;
+    }
 
     goto finally;
 
+// cleanup
 finally:
-    close(sfd);
+    if (ssl)
+        SSL_free(ssl);
+    if (ctx)
+        SSL_CTX_free(ctx);
+    if (sfd != -1)
+        close(sfd);
     return response_status;
 }
 
@@ -497,6 +625,7 @@ void *handleClient(void *arg)
     if (strncmp(request->host, "localhost:", 10) == 0 && strcmp(request->path, "/") == 0)
     {
         printf("sending welcome message\n");
+
         sendWelcomeMessage(cfd, response, request->httpVersion);
 
         // freeing all the allocated resources
@@ -505,8 +634,8 @@ void *handleClient(void *arg)
         return NULL;
     }
 
-    // handle if no query url present
-    if (strlen(request->query_url) == 0)
+    // handle if no query url present and no favicon icon requested
+    if (strlen(request->query_url) == 0 && strcmp(request->path, "/favicon.ico"))
     {
         handleSendingError(response, request->httpVersion, MISQRYPRM, cfd);
 
@@ -518,8 +647,10 @@ void *handleClient(void *arg)
     // lock so that no other thread could modify the list
     pthread_mutex_lock(clientArg->mtx);
 
+    const char *url = strcmp(request->path, "/favicon.ico") == 0 ? request->path + 1 : request->query_url;
+
     // check if there is a cached response available
-    CacheNode *res = findCacheNode(*(clientArg->head), request->query_url);
+    CacheNode *res = findCacheNode(*(clientArg->head), url);
 
     // if cached response found then use it
     if (res != NULL)
@@ -530,20 +661,22 @@ void *handleClient(void *arg)
         file_path[bytes_written] = '\0';
 
         // read the cache file
-        char *data = read_file(file_path);
+        size_t data_file_size = 0;
+        char *data = read_file(file_path, &data_file_size);
 
         // prepare the data type file path
-        bytes_written = snprintf(file_path + bytes_written, sizeof(file_path) - bytes_written - 1, ".meta");
+        bytes_written += snprintf(file_path + bytes_written, sizeof(file_path) - bytes_written - 1, ".meta");
         file_path[bytes_written] = '\0';
 
         // read the data type file
-        char *data_type = read_file(file_path);
+        size_t data_type_file_size = 0;
+        char *data_type = read_file(file_path, &data_type_file_size);
 
         response->statusCode = 200;
         strcpy(response->statusMessage, "Successful");
         strcpy(response->httpVersion, request->httpVersion);
         strcpy(response->contentType, data_type);
-        response->contentLength = strlen(data);
+        response->contentLength = data_file_size;
         response->isChunked = 0;
         response->isRedirect = 0;
         response->body = data;
@@ -572,7 +705,7 @@ void *handleClient(void *arg)
 
         // create a response object + handle response errors
         int res_status = 1;
-        if ((res_status = createResponse(cfd, response, request, responseBuffer, requestBuffer)) != 1)
+        if ((res_status = createResponse(cfd, response, request, responseBuffer, requestBuffer)) != 0)
         {
             handleSendingError(response, request->httpVersion, res_status, cfd);
 
@@ -586,7 +719,13 @@ void *handleClient(void *arg)
             *(clientArg->tail) = removeCacheNode(*(clientArg->tail));
 
         // now cache the response for future use
-        *(clientArg->head) = addCacheNode(*(clientArg->head), request->query_url, strlen(request->query_url), response->body, response->contentType);
+        *(clientArg->head) = addCacheNode(*(clientArg->head),
+                                          request->query_url,
+                                          strlen(request->query_url),
+                                          response->body,
+                                          response->contentLength,
+                                          response->contentType,
+                                          strlen(response->contentType));
 
         // if tail is null then point it to head
         if (*(clientArg->tail) == NULL)
@@ -595,6 +734,8 @@ void *handleClient(void *arg)
             *(clientArg->tail) = *(clientArg->head);
         }
     }
+
+    unparseHttpResponse(response, responseBuffer, RESPONSE_BUFFER_SIZE);
 
     // now send the data back to client
     sendMessage(cfd, 0, "%s", responseBuffer);
@@ -610,7 +751,8 @@ int sendWelcomeMessage(int fd, HttpResponse *response, const char *httpVersion)
 {
     char responseBuffer[RESPONSE_BUFFER_SIZE];
     ssize_t bytesSent = 0;
-    char body[] = "<html><body><h1>Welcome to Proxy!</h1></body></html>";
+    size_t home_page_file_size = 0;
+    char *body = read_file("search.html", &home_page_file_size);
 
     initHttpResponse(response);
 
@@ -618,9 +760,9 @@ int sendWelcomeMessage(int fd, HttpResponse *response, const char *httpVersion)
     response->statusCode = 200;
     strcpy(response->httpVersion, httpVersion);
     strcpy(response->statusMessage, "OK");
-    response->body = strdup(body);
+    response->body = body;
     strcpy(response->contentType, "text/html");
-    response->contentLength = (int)strlen(response->body);
+    response->contentLength = home_page_file_size;
     response->isChunked = 0;
 
     // parse response into string
@@ -696,5 +838,40 @@ void handleSendingError(HttpResponse *response, const char *http_version, int er
         sendErrorMessage(cfd, response, http_version, 400, "Bad Request", "Query Url Must Be Present in this Case!");
         break;
     }
+    }
+}
+
+void check_ssl_error(SSL *ssl, int val, const char *context)
+{
+    if (val > 0)
+        return;
+
+    int err = SSL_get_error(ssl, val);
+    fprintf(stderr, "[SSL %s] failed: ", context);
+
+    switch (err)
+    {
+    case SSL_ERROR_ZERO_RETURN:
+        fprintf(stderr, "Connection closed cleanly\n");
+        break;
+
+    case SSL_ERROR_WANT_READ:
+        fprintf(stderr, "Want read (non-blocking mode)\n");
+        break;
+
+    case SSL_ERROR_WANT_WRITE:
+        fprintf(stderr, "Want write (non-blocking mode)\n");
+        break;
+
+    case SSL_ERROR_SYSCALL:
+        perror("syscall error");
+        break;
+
+    case SSL_ERROR_SSL:
+        ERR_print_errors_fp(stderr);
+        break;
+
+    default:
+        fprintf(stderr, "Unknown SSL error: %d\n", err);
     }
 }

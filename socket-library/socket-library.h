@@ -6,20 +6,22 @@
 #endif
 
 #include <stdio.h>
+#include <netdb.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <unistd.h>
+#include <stdarg.h>
+#include <pthread.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <netdb.h>
-#include <pthread.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
 #include "../http-parser/http-parser.h"
 #include "../utils/custom-utilities.h"
 #include "../cache-list/cache-list.h"
 
 #define REQUEST_BUFFER_SIZE 8196
-#define RESPONSE_BUFFER_SIZE 8196
+#define RESPONSE_BUFFER_SIZE 16384
 
 struct ClientHandlerArg
 {
@@ -37,11 +39,12 @@ enum RESPONSE_ERROR_CODE
     SERVREQFAIL,
     SERVRESFAIL,
     BADSERVRES,
+    REDIRERR
 };
 
 enum REQUEST_ERROR_CODE
 {
-    CLNTREQFAIL = 5,
+    CLNTREQFAIL = 20,
     BADCLNTREQ,
     MISQRYPRM,
     INTRSERVERR
@@ -54,18 +57,22 @@ void exitCleanUp(int fd,
                  HttpResponse *response,
                  pthread_mutex_t *mtx,
                  pthread_cond_t *cond,
-                 const char *requestBuffer,
-                 const char *responseBuffer);
+                 char *requestBuffer,
+                 char *responseBuffer);
 
 // send message to client/server
 ssize_t
 sendMessage(int fd, int flags, const char *format, ...);
+
+int send_message_securely(SSL *ssl, char *buffer, int buffer_size);
 
 // receive data from client/server
 ssize_t recvMessage(int fd, int flags, char *buffer, size_t bufferSize);
 
 // receieve all the data in the buffer at max its size
 ssize_t recvAllData(int fd, char *buffer, size_t bufferSize, int flags);
+
+int recvAllDataSecurely(SSL *ssl, char *buffer, int buffer_size);
 
 // send data via udp packets
 ssize_t sendMessagePacket(int fd, int flags, struct sockaddr *addr, socklen_t addrLen, const char *format, ...);
@@ -119,4 +126,6 @@ int sendErrorMessage(int fd, HttpResponse *response, const char *httpVersion, in
 
 void handleSendingError(HttpResponse *response, const char *http_version, int error_code, int cfd);
 
-#endif
+void check_ssl_error(SSL *ssl, int val, const char *context);
+
+#endif  

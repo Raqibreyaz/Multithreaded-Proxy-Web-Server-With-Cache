@@ -2,8 +2,8 @@
 #define CACHE_LIST_H
 
 #include <stdio.h>
-#include <dirent.h>
 #include <string.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include "../utils/custom-utilities.h"
 #define MAX_CACHE_SIZE 100
@@ -13,7 +13,7 @@ extern size_t cacheSize;
 
 typedef struct CacheNode
 {
-    const char *url;
+    char *url;
     struct CacheNode *prev;
     struct CacheNode *next;
 } CacheNode;
@@ -34,13 +34,13 @@ int isCacheFull(const CacheNode *head);
 void initCacheNode(CacheNode *node);
 
 // add node to cache head
-CacheNode *addCacheNode(CacheNode *head, const char *url, const int url_size, const char *data, const char *data_type);
+CacheNode *addCacheNode(CacheNode *head, const char *url, const int url_size, const char *data, size_t data_size, const char *data_type, size_t data_type_size);
 
 // remove node from cache tail
 CacheNode *removeCacheNode(CacheNode *tail);
 
 // search node in cache, NULL for not found
-CacheNode *findCacheNode(const CacheNode *head, const char *url);
+CacheNode *findCacheNode(CacheNode *head, const char *url);
 
 // move a node to head
 CacheNode *moveToHead(CacheNode *head, CacheNode *node);

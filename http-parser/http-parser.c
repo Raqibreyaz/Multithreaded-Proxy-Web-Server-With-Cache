@@ -33,7 +33,7 @@ void initHttpResponse(HttpResponse *response)
 }
 
 // create request object from given buffer
-int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
+int parseHttpRequest(HttpRequest *request, char *requestBuffer)
 {
 
     if (!requestBuffer || requestBuffer[0] == '\0' || !request)
@@ -87,8 +87,9 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
 
     // now extract host and accept headers
     char hostHeader[HOST_SIZE], acceptHeader[ACCEPT_SIZE];
+    int no_of_headers_done = 0;
     char *line = NULL;
-    while ((line = strtok_r(NULL, "\r\n", &savePtr)) && line != NULL)
+    while (no_of_headers_done < 2 && (line = strtok_r(NULL, "\r\n", &savePtr)) && line != NULL)
     {
         if (strncmp(line, "Accept:", 7) == 0)
         {
@@ -98,6 +99,7 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
                 printf("failed to extract accept header!\n");
                 return -1;
             }
+            no_of_headers_done++;
         }
         else if (strncmp(line, "Host:", 5) == 0)
         {
@@ -107,6 +109,7 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
                 printf("failed to extract host header!\n");
                 return -1;
             }
+            no_of_headers_done++;
         }
     }
 
@@ -123,7 +126,7 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
 
     // when our home page or favicon.ico is requested then
     // host and path will be same
-    if (strcmp(path, "/") == 0 || strcmp(path, "/favicon.ico"))
+    if (strcmp(path, "/") == 0 || strcmp(path, "/favicon.ico") == 0)
     {
         // host will remain as it is
         strncpy(request->host, hostHeader, HOST_SIZE);
@@ -136,20 +139,39 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
         // skipping the starting /?url=
         path += 6;
 
-        // get the query url
-        char *query_url_path = get_url_path_from_query(path);
-        strcpy(request->path, query_url_path);
-        free(query_url_path);
+        // when no url is there throw error
+        if (*path == '\0')
+            return -1;
 
         // get the host
         char *query_host = get_host_from_query(path);
-        strcpy(request->host, query_host);
-        free(query_host);
+        if (query_host)
+        {
+            strcpy(request->host, query_host);
+            free(query_host);
+        }
+
+        // get the query url
+        char *query_url_path = get_url_path_from_query(path);
+        if (query_url_path)
+        {
+            strcpy(request->path, query_url_path);
+            free(query_url_path);
+        }
 
         // creating the filename like url
-        int bytes_written = snprintf(request->query_url, URL_SIZE, "%s/%s", request->host, request->path);
-        request->query_url[bytes_written] = '\0';
-        sanitize_filename(request->query_url);
+        if (*(request->host))
+        {
+            int bytes_written = snprintf(request->query_url, URL_SIZE, "%s/%s", request->host, request->path);
+            request->query_url[bytes_written] = '\0';
+            sanitize_filename(request->query_url);
+        }
+    }
+    else
+    {
+        printf("invalid request path: %s\n", path);
+        free(requestCopy);
+        return -1;
     }
 
     printf(
@@ -163,6 +185,7 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
         request->httpVersion,
         request->host,
         request->path,
+        request->query_url,
         request->accept);
 
     free(requestCopy);
@@ -170,7 +193,7 @@ int parseHttpRequest(HttpRequest *request, const char *requestBuffer)
 }
 
 // create response object from given buffer
-int parseHttpResponse(HttpResponse *response, const char *responseBuffer)
+int parseHttpResponse(HttpResponse *response, char *responseBuffer)
 {
 
     if (!response ||
@@ -275,12 +298,18 @@ int parseHttpResponse(HttpResponse *response, const char *responseBuffer)
         "status-msg: %s\n"
         "content-type: %s\n"
         "content-length: %d\n"
+        "redirect: %d"
+        "redirect-location: %s"
+        "chunked-encoding: %d"
         "body: %s\n\n",
         response->httpVersion,
         response->statusCode,
         response->statusMessage,
         response->contentType,
         response->contentLength,
+        response->isRedirect,
+        response->location,
+        response->isChunked,
         response->body);
 
     return 1;
@@ -343,7 +372,7 @@ int unparseHttpResponse(HttpResponse *response, char *responseBuffer, size_t buf
                              "%s",
                              contentHeader[0],
                              contentHeader[1],
-                             response->body ? response->body : "");
+                             response->body);
 
     return bytesWritten;
 }
@@ -354,23 +383,28 @@ int unparseHttpRequest(HttpRequest *request, char *requestBuffer, size_t bufferS
     if (!request || !requestBuffer || bufferSize == 0)
         return -1;
 
+    // skip leading / if present
+    char *url_path = strncmp(request->path, "/", 1) != 0 ? request->path : request->path + 1;
+
+    char referer[URL_SIZE + sizeof("https://")];
+    snprintf(referer, URL_SIZE, "https://%s", request->host);
+
     // create a raw request
     int bytesWritten = snprintf(requestBuffer, bufferSize,
-                                "%s %s HTTP/%s\r\n"
+                                "%s /%s HTTP/%s\r\n"
                                 "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
-                                "Accept-Encoding: gzip, deflate, br\r\n"
                                 "Accept-Language: en-US,en;q=0.9\r\n"
                                 "Host: %s\r\n"
                                 "Accept: %s\r\n"
-                                "Referrer: %s\r\n"
-                                "Connection: keep-alive\r\n"
+                                "Referer: %s\r\n"
+                                "Connection: close\r\n"
                                 "\r\n",
                                 request->method,
-                                request->path,
+                                url_path,
                                 request->httpVersion,
                                 request->host,
                                 request->accept,
-                                request->host);
+                                referer);
 
     return bytesWritten;
 }
