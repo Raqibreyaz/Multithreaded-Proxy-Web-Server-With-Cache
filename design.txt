@@ -6,7 +6,7 @@
      extracting host from url ✅
 - function for sanitizing domain for filename using regex ✅
 - function for checking if site is blocked ✅
-- function for searching in the linked list cache
+- function for searching in the linked list cache ✅
 - function for getting time passed in mins for a file ✅
 - function for reading a file ✅
 - function for writing to a file ✅

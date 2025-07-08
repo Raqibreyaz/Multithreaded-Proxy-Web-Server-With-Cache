@@ -4,8 +4,8 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include "utils.h"
 #include "cache-store.h"
-#define CACHE_DIR "cached"
 
 typedef struct CacheEntry
 {
@@ -36,4 +36,5 @@ void lru_evict(CacheLRU *cache);
 
 void lru_delete(CacheLRU *cache, const char *url);
 
+void print_cache_list(CacheLRU *cache);
 #endif

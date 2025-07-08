@@ -9,10 +9,14 @@ void ensure_cache_dir()
     }
 }
 
+// sanitizes invalid chars from the url for filename
 char *get_cache_filename(const char *url)
 {
     size_t url_len = strlen(url);
+
     char *filename = malloc(url_len + 1);
+    if (!filename)
+        return NULL;
     filename[url_len] = '\0';
 
     const char *invalid = "<>:\"/\\|?*";
@@ -24,6 +28,12 @@ char *get_cache_filename(const char *url)
         else
             filename[i] = url[i];
     }
+
+    // removing trailing / or -
+    if (filename[url_len - 1] == '-')
+        filename[url_len - 1] = '\0';
+
+    return filename;
 }
 
 int write_cache_file(const char *filename, const char *content_type, const char *data, size_t data_len)
@@ -42,6 +52,7 @@ int write_cache_file(const char *filename, const char *content_type, const char 
     if (fprintf(fptr, "%s\n", content_type) <= 0)
     {
         printf("failed to write content type to file: %s\n", filename);
+        fclose(fptr);
         return 0;
     }
 
@@ -49,42 +60,53 @@ int write_cache_file(const char *filename, const char *content_type, const char 
     if (fwrite(data, 1, data_len, fptr) != data_len)
     {
         printf("failed to write full data to file: %s\n", filename);
+        fclose(fptr);
         return 0;
     }
 
+    fclose(fptr);
     return 1;
 }
 char *read_cache_file(const char *filename, char *content_type_out, size_t *data_len_out)
 {
+    FILE *fptr = NULL;
+    char *data = NULL;
+
     char full_path[1024];
     snprintf(full_path, sizeof(full_path) - 1, "%s/%s", CACHE_DIR, filename);
 
-    FILE *fptr = fopen(full_path, "rb");
+    fptr = fopen(full_path, "rb");
     if (!fptr)
     {
         printf("failed to read file: %s\n", full_path);
         goto catch;
     }
 
+    // getting file stats, like size
     struct stat st;
-    if (stat(fptr, &st) != 0)
+    if (stat(full_path, &st) != 0)
         goto catch;
     long file_size = st.st_size;
 
+    // reading the content type
     int ch = '\0';
     while ((ch = getc(fptr)) != '\n')
         *content_type_out++ = ch;
     *content_type_out = '\0';
 
+    // calculating the body data length
     long body_start = ftell(fptr);
     if (body_start < 0 || body_start >= file_size)
         goto catch;
+    size_t body_len = file_size - body_start;
 
-    long body_len = file_size - body_start;
-
-    char *data = (char *)malloc(body_len + 1);
+    // allocating space
+    data = (char *)malloc(body_len + 1);
     if (!data)
+    {
+        printf("failed to allocated space for data\n");
         goto catch;
+    }
 
     size_t bytes_read = fread(data, 1, body_len, fptr);
     data[bytes_read] = '\0';
@@ -93,7 +115,6 @@ char *read_cache_file(const char *filename, char *content_type_out, size_t *data
     if (bytes_read != body_len)
     {
         printf("failed to read specified bytes from file: %s\n", filename);
-        free(data);
         goto catch;
     }
 
@@ -103,5 +124,7 @@ char *read_cache_file(const char *filename, char *content_type_out, size_t *data
 catch:
     if (fptr)
         fclose(fptr);
+    if (data)
+        free(data);
     return NULL;
 }

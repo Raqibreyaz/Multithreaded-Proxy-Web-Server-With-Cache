@@ -4,6 +4,189 @@
 // close
 #include "custom-utilities.h"
 
+void cleanup_func(int cfd, HttpRequest *request, HttpResponse *response, char *request_buffer, char *response_buffer)
+{
+    // closing connection to client
+    if (cfd != -1)
+        close(cfd);
+
+    // freeing request
+    if (request)
+        free(request);
+
+    // freeing response
+    if (response)
+    {
+        freeHttpResponse(response);
+        free(response);
+    }
+
+    // freeing requestbuffer
+    if (request_buffer)
+        free(request_buffer);
+
+    // freeing response buffer
+    if (response_buffer)
+        free(response_buffer);
+}
+
+void handle_non_thread_client(struct ClientHandlerArg clientArg)
+{
+    int cfd = clientArg.cfd;
+
+    HttpRequest *request = (HttpRequest *)malloc(sizeof(HttpRequest));
+    HttpResponse *response = (HttpResponse *)malloc(sizeof(HttpResponse));
+    char *requestBuffer = (char *)malloc(REQUEST_BUFFER_SIZE);
+    char *responseBuffer = (char *)malloc(RESPONSE_BUFFER_SIZE);
+
+    // if memory allocating failed then close connection and go back
+    if (!request || !response || !requestBuffer || !responseBuffer)
+    {
+        close(cfd);
+        return;
+    }
+
+    // accept request from client + handle requesting error
+    int req_status = 1;
+    if ((req_status = acceptRequest(cfd, request, requestBuffer)) != 1)
+    {
+        handleSendingError(response, "1.1", req_status, cfd);
+
+        cleanup_func(cfd, request, response, requestBuffer, responseBuffer);
+
+        return;
+    }
+
+    // when our home page is requested then respond the home page
+    if (strncmp(request->host, "localhost:", 10) == 0 && strcmp(request->path, "/") == 0)
+    {
+        printf("sending welcome message\n");
+
+        sendWelcomeMessage(cfd, response, request->httpVersion);
+
+        // freeing all the allocated resources
+        cleanup_func(cfd, request, response, requestBuffer, responseBuffer);
+
+        return;
+    }
+
+    // handle if no query url present and no favicon icon requested
+    if (strlen(request->query_url) == 0 && strcmp(request->path, "/favicon.ico"))
+    {
+        handleSendingError(response, request->httpVersion, MISQRYPRM, cfd);
+
+        cleanup_func(cfd, request, response, requestBuffer, responseBuffer);
+
+        return;
+    }
+
+    const char *url = strcmp(request->path, "/favicon.ico") == 0 ? request->path + 1 : request->query_url;
+
+    // check if there is a cached response available
+    CacheNode *res = findCacheNode(*(clientArg.head), url);
+
+    // if cached response found then use it
+    if (res != NULL)
+    {
+        // prepare the full file path
+        char file_path[1050];
+        int bytes_written = snprintf(file_path, sizeof(file_path) - sizeof(".meta") - 1, "%s/%s", CACHE_DIR, res->url);
+        file_path[bytes_written] = '\0';
+
+        // read the cache file
+        size_t data_file_size = 0;
+        char *data = read_file(file_path, &data_file_size);
+
+        // prepare the data type file path
+        bytes_written += snprintf(file_path + bytes_written, sizeof(file_path) - bytes_written - 1, ".meta");
+        file_path[bytes_written] = '\0';
+
+        // read the data type file
+        size_t data_type_file_size = 0;
+        char *data_type = read_file(file_path, &data_type_file_size);
+
+        response->statusCode = 200;
+        strcpy(response->statusMessage, "Successful");
+        strcpy(response->httpVersion, request->httpVersion);
+        strcpy(response->contentType, data_type);
+        response->contentLength = data_file_size;
+        response->isChunked = 0;
+        response->isRedirect = 0;
+        response->body = data;
+
+        // freeing the allocated space for the data type
+        free(data_type);
+
+        // move the node to head as it is recently used
+        CacheNode *newTail = moveToHead(*(clientArg.head), res);
+
+        // update the new head
+        *(clientArg.head) = res;
+
+        // update the tail if modified
+        if (newTail)
+            *(clientArg.tail) = newTail;
+
+        printf("\nserving from cached data\n");
+    }
+
+    // otherwise create a response by connecting to remote server
+    // and cache the response
+    else
+    {
+        printf("\nrequesting remote server for response\n");
+
+        // create a response object + handle response errors
+        int res_status = 1;
+        if ((res_status = createResponse(cfd, response, request, responseBuffer, requestBuffer)) != 0)
+        {
+            handleSendingError(response, request->httpVersion, res_status, cfd);
+            cleanup_func(cfd, request, response, requestBuffer, responseBuffer);
+
+            return;
+        }
+
+        // when cache becomes full remove the least used node
+        if (isCacheFull(*(clientArg.head)))
+            *(clientArg.tail) = removeCacheNode(*(clientArg.tail));
+
+        // rewrite the html for urls
+        char url[URL_SIZE];
+        snprintf(url, URL_SIZE, "https://%s/%s", request->host, request->path);
+        char *new_body = rewrite_html_to_proxy(response->body, url);
+
+        free(response->body);
+        response->body = new_body;
+        new_body = NULL;
+
+        // now cache the response for future use
+        *(clientArg.head) = addCacheNode(*(clientArg.head),
+                                         request->query_url,
+                                         strlen(request->query_url),
+                                         response->body,
+                                         response->contentLength,
+                                         response->contentType,
+                                         strlen(response->contentType));
+
+        // if tail is null then point it to head
+        if (*(clientArg.tail) == NULL)
+        {
+            printf("updating tail node\n");
+            *(clientArg.tail) = *(clientArg.head);
+        }
+    }
+
+    unparseHttpResponse(response, responseBuffer, RESPONSE_BUFFER_SIZE);
+
+    // now send the data back to client
+    sendMessage(cfd, 0, "%s", responseBuffer);
+
+    // free all the allocated resources
+    cleanup_func(cfd, request, response, requestBuffer, responseBuffer);
+
+    return;
+}
+
 void fatalWithClose(int fd, const char *msg)
 {
     perror(msg);
@@ -188,7 +371,7 @@ int is_site_blocked(const char *blocked_sites[], int no_of_blocked_sites, const 
 {
     for (int i = 0; i < no_of_blocked_sites; i++)
     {
-        if (strcmp(blocked_sites[i], url) == 0)
+        if (strncmp(blocked_sites[i], url, strlen(url)) == 0)
             return 1;
     }
     return 0;
@@ -335,19 +518,22 @@ void sanitize_filename(char *file_name)
     }
 }
 
-char *insert_base_tag(const char *html, const char *domain) {
+char *insert_base_tag(const char *html, const char *domain)
+{
     const char *base_fmt = "<base href=\"/?url=%s/\">";
     char base_tag[1024];
     snprintf(base_tag, sizeof(base_tag), base_fmt, domain);
 
     const char *head_pos = strcasestr(html, "<head>");
-    if (!head_pos) return strdup(html); // no <head>
+    if (!head_pos)
+        return strdup(html); // no <head>
 
     size_t pre_len = head_pos - html + strlen("<head>");
     size_t html_len = strlen(html);
 
     char *result = malloc(html_len + strlen(base_tag) + 1);
-    if (!result) return NULL;
+    if (!result)
+        return NULL;
     strncpy(result, html, pre_len);
     result[pre_len] = '\0';
     strcat(result, base_tag);
@@ -357,26 +543,32 @@ char *insert_base_tag(const char *html, const char *domain) {
 }
 
 // Rewrite absolute URLs like href="https://..."
-char *rewrite_absolute_urls(const char *html) {
+char *rewrite_absolute_urls(const char *html)
+{
     regex_t regex;
     const char *pattern = "\\b(action|src|href|content|data|poster)=[\"'](https?://[^\"']+)[\"']";
-    if (regcomp(&regex, pattern, REG_EXTENDED | REG_ICASE) != 0) return strdup(html);
+    if (regcomp(&regex, pattern, REG_EXTENDED | REG_ICASE) != 0)
+        return strdup(html);
 
     regmatch_t matches[3];
     const char *cursor = html;
     char *result = calloc(1, MAX_RESULT_LEN);
-    if (!result) return NULL;
+    if (!result)
+        return NULL;
     size_t written = 0;
 
-    while (cursor && *cursor && regexec(&regex, cursor, 3, matches, 0) == 0) {
-        if (matches[0].rm_so < 0) break;
+    while (cursor && *cursor && regexec(&regex, cursor, 3, matches, 0) == 0)
+    {
+        if (matches[0].rm_so < 0)
+            break;
 
         strncat(result + written, cursor, matches[0].rm_so);
         written += matches[0].rm_so;
 
         int attr_len = matches[1].rm_eo - matches[1].rm_so;
         int url_len = matches[2].rm_eo - matches[2].rm_so;
-        if (attr_len <= 0 || url_len <= 0 || attr_len >= MAX_ATTR_LEN || url_len >= MAX_URL_LEN) break;
+        if (attr_len <= 0 || url_len <= 0 || attr_len >= MAX_ATTR_LEN || url_len >= MAX_URL_LEN)
+            break;
 
         char attr[MAX_ATTR_LEN], url[MAX_URL_LEN];
         strncpy(attr, cursor + matches[1].rm_so, attr_len);
@@ -388,32 +580,39 @@ char *rewrite_absolute_urls(const char *html) {
         cursor += matches[0].rm_eo;
     }
 
-    if (cursor) strncat(result + written, cursor, MAX_RESULT_LEN - written - 1);
+    if (cursor)
+        strncat(result + written, cursor, MAX_RESULT_LEN - written - 1);
     regfree(&regex);
     return result;
 }
 
 // Rewrite relative or protocol-relative URLs
-char *rewrite_relative_urls(const char *html, const char *domain) {
+char *rewrite_relative_urls(const char *html, const char *domain)
+{
     regex_t regex;
     const char *pattern = "\\b(action|src|href|content|data|poster)=[\"'](?!https?:|//|data:)([^\"']+)[\"']";
-    if (regcomp(&regex, pattern, REG_EXTENDED | REG_ICASE) != 0) return strdup(html);
+    if (regcomp(&regex, pattern, REG_EXTENDED | REG_ICASE) != 0)
+        return strdup(html);
 
     regmatch_t matches[3];
     const char *cursor = html;
     char *result = calloc(1, MAX_RESULT_LEN);
-    if (!result) return NULL;
+    if (!result)
+        return NULL;
     size_t written = 0;
 
-    while (cursor && *cursor && regexec(&regex, cursor, 3, matches, 0) == 0) {
-        if (matches[0].rm_so < 0) break;
+    while (cursor && *cursor && regexec(&regex, cursor, 3, matches, 0) == 0)
+    {
+        if (matches[0].rm_so < 0)
+            break;
 
         strncat(result + written, cursor, matches[0].rm_so);
         written += matches[0].rm_so;
 
         int attr_len = matches[1].rm_eo - matches[1].rm_so;
         int path_len = matches[2].rm_eo - matches[2].rm_so;
-        if (attr_len <= 0 || path_len <= 0 || attr_len >= MAX_ATTR_LEN || path_len >= MAX_URL_LEN) break;
+        if (attr_len <= 0 || path_len <= 0 || attr_len >= MAX_ATTR_LEN || path_len >= MAX_URL_LEN)
+            break;
 
         char attr[MAX_ATTR_LEN], path[MAX_URL_LEN];
         strncpy(attr, cursor + matches[1].rm_so, attr_len);
@@ -428,19 +627,24 @@ char *rewrite_relative_urls(const char *html, const char *domain) {
         cursor += matches[0].rm_eo;
     }
 
-    if (cursor) strncat(result + written, cursor, MAX_RESULT_LEN - written - 1);
+    if (cursor)
+        strncat(result + written, cursor, MAX_RESULT_LEN - written - 1);
     regfree(&regex);
     return result;
 }
 
 // Full pipeline to rewrite an HTML document
-char *rewrite_html_to_proxy(const char *html, const char *domain) {
-    if (!html || !domain) return NULL;
+char *rewrite_html_to_proxy(const char *html, const char *domain)
+{
+    if (!html || !domain)
+        return NULL;
     char *step1 = insert_base_tag(html, domain);
-    if (!step1) return NULL;
+    if (!step1)
+        return NULL;
     char *step2 = rewrite_absolute_urls(step1);
     free(step1);
-    if (!step2) return NULL;
+    if (!step2)
+        return NULL;
     char *step3 = rewrite_relative_urls(step2, domain);
     free(step2);
     return step3;

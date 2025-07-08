@@ -46,8 +46,10 @@ int open_connection(const char *host, const char *port)
 // Global one-time init flag
 static int ssl_initialized = 0;
 
-SSL* ssl_wrap(int sockfd, const char *hostname, SSL_CTX **out_ctx) {
-    if (!ssl_initialized) {
+SSL *ssl_wrap(int sockfd, const char *hostname, SSL_CTX **out_ctx)
+{
+    if (!ssl_initialized)
+    {
         SSL_library_init();
         SSL_load_error_strings();
         OpenSSL_add_all_algorithms();
@@ -55,22 +57,27 @@ SSL* ssl_wrap(int sockfd, const char *hostname, SSL_CTX **out_ctx) {
     }
 
     SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
-    if (!ctx) {
+    if (!ctx)
+    {
         ERR_print_errors_fp(stderr);
         return NULL;
     }
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
 
     SSL *ssl = SSL_new(ctx);
-    if (!ssl) {
+    if (!ssl)
+    {
         ERR_print_errors_fp(stderr);
         SSL_CTX_free(ctx);
         return NULL;
     }
 
     SSL_set_fd(ssl, sockfd);
-    SSL_set_tlsext_host_name(ssl, hostname);  // SNI for modern HTTPS
+    SSL_set_tlsext_host_name(ssl, hostname); // SNI for modern HTTPS
 
-    if (SSL_connect(ssl) != 1) {
+    int ssl_connect_res = 0;
+    if ((ssl_connect_res = SSL_connect(ssl)) != 1)
+    {
         ERR_print_errors_fp(stderr);
         SSL_free(ssl);
         SSL_CTX_free(ctx);

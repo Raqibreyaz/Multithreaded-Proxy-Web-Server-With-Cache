@@ -3,6 +3,7 @@
     "socket-library.h": "c",
     "socket.h": "c",
     "cache-list.h": "c",
-    "http-parser.h": "c"
+    "http-parser.h": "c",
+    "fetch.h": "c"
   }
 }

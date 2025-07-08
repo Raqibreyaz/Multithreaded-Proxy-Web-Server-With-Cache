@@ -28,6 +28,8 @@ CacheLRU *init_cache_lru(int max_size)
         if (stat(full_path, &st) == -1)
         {
             perror("stat failed");
+            closedir(dir);
+            free_cache_lru(cache);
             return NULL;
         }
 
@@ -45,6 +47,9 @@ CacheLRU *init_cache_lru(int max_size)
 
 void free_cache_lru(CacheLRU *cache)
 {
+    if (!cache)
+        return;
+
     CacheEntry *curr = cache->head;
     while (curr)
     {
@@ -63,12 +68,12 @@ int lru_contains(CacheLRU *cache, const char *url)
         return 0;
 
     CacheEntry *tmp = cache->head;
-    const char *filename = get_cache_filename(url);
+    char *filename = get_cache_filename(url);
 
     // finding the node which has that url
     while (tmp &&
            tmp->url &&
-           (strcmp(tmp->url, filename) != 0))
+           (!urls_are_equivalent(tmp->url, filename)))
         tmp = tmp->next;
 
     free(filename);
@@ -80,7 +85,7 @@ int lru_contains(CacheLRU *cache, const char *url)
 void lru_touch(CacheLRU *cache, const char *url)
 {
     CacheEntry *curr = cache->head;
-    const char *filename = get_cache_filename(url);
+    char *filename = get_cache_filename(url);
     while (curr)
     {
         if (strcmp(curr->url, filename) == 0)
@@ -114,15 +119,16 @@ void lru_touch(CacheLRU *cache, const char *url)
 
 void lru_insert(CacheLRU *cache, const char *url, const char *data, size_t data_len, const char *content_type)
 {
-    if (!cache || !url || !data || data_len == 0)
+    if (!cache || !url)
         return;
 
-    const char *filename = get_cache_filename(url);
+    char *filename = get_cache_filename(url);
 
     // if url already in the list then skip
     if (lru_contains(cache, filename))
     {
         lru_touch(cache, filename);
+        free(filename);
         return;
     }
 
@@ -131,13 +137,15 @@ void lru_insert(CacheLRU *cache, const char *url, const char *data, size_t data_
         lru_evict(cache);
 
     // Step 1: Write to disk
-    write_cache_file(filename, content_type, data, data_len);
+    if (data && content_type)
+        write_cache_file(filename, content_type, data, data_len);
 
     // Step 2: Create new LRU entry
     CacheEntry *entry = malloc(sizeof(CacheEntry));
     if (!entry)
     {
         printf("failed to add entry in list\n");
+        free(filename);
         return;
     }
 
@@ -183,7 +191,7 @@ void lru_delete(CacheLRU *cache, const char *url)
 {
     CacheEntry *curr = cache->head;
 
-    const char *filename = get_cache_filename(url);
+    char *filename = get_cache_filename(url);
 
     while (curr)
     {
@@ -213,4 +221,20 @@ void lru_delete(CacheLRU *cache, const char *url)
     }
 
     free(filename);
+}
+
+// print the cache list urls
+void print_cache_list(CacheLRU *cache)
+{
+    if (!cache || cache->current_size == 0)
+        return;
+
+    printf("\ncurrent_list_scenario:\n");
+    CacheEntry *temp = cache->head;
+    while (temp)
+    {
+        printf("%s\n", temp->url);
+        temp = temp->next;
+    }
+    printf("\n");
 }
