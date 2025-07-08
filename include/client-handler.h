@@ -5,9 +5,19 @@
 #include "http-request-response.h"
 #include "http-parser.h"
 #include "blocked-sites.h"
+#include "cache.h"
 #include "utils.h"
 #include <unistd.h>
 
-void handle_client(int client_fd, CacheLRU *cache, char *blocked_sites[], int n_of_b_sites);
+typedef struct
+{
+    int client_fd;
+    CacheLRU *cache;
+    char **blocked_sites;
+    int n_of_b_sites;
+    pthread_mutex_t cache_lock;
+} ClientHandlerArgs;
+
+void* handle_client(void *args);
 
 #endif

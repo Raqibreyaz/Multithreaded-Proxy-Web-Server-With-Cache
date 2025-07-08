@@ -1,6 +1,6 @@
 #include "../include/http-request-response.h"
 
-int send_http_request(int sockfd, SSL *ssl, const char* host,const char* path)
+int send_http_request(int sockfd, SSL *ssl, const char *host, const char *path)
 {
     char request[2048];
     int len = snprintf(
@@ -50,7 +50,7 @@ int send_http_request(int sockfd, SSL *ssl, const char* host,const char* path)
 char *recv_response(int sockfd, SSL *ssl, size_t *out_len)
 {
     size_t buffer_size = INITIAL_BUFFER_SIZE;
-    char *buffer = malloc(buffer_size);
+    char *buffer = calloc(buffer_size, 1);
     if (!buffer)
         return NULL;
 
@@ -75,7 +75,7 @@ char *recv_response(int sockfd, SSL *ssl, size_t *out_len)
         // Read data into buffer
         if (ssl)
         {
-            n = SSL_read(ssl, buffer + total_read, buffer_size - total_read);
+             n = SSL_read(ssl, buffer + total_read, buffer_size - total_read);
         }
         else
         {

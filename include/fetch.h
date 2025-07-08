@@ -1,5 +1,6 @@
 #ifndef FETCH_H
 #define FETCH_H
+#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <string.h>
@@ -10,8 +11,8 @@
 #include "utils.h"
 #include "http-parser.h"
 #include "socket-utils.h"
+#include "html-rewriter.h"
 #include "http-request-response.h"
-
 
 #define URL_MAX_LEN 2048
 

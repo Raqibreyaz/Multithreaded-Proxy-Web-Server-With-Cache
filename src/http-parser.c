@@ -93,11 +93,12 @@ HttpResponse *parse_http_response(const char *raw, size_t raw_len)
 
     // Step 5: Handle body
     size_t body_len = raw_len - (header_end - raw);
-    res->body = malloc(body_len);
+    res->body = calloc(body_len + 1, 1);
     if (!res->body)
         goto fail;
 
     memcpy(res->body, header_end, body_len);
+    res->body[body_len] = '\0';
     res->bodyLength = body_len;
 
     free(headers);

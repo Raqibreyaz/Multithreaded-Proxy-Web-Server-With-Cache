@@ -2,6 +2,8 @@
 #define SERVER_H
 #include "client-handler.h"
 #include "blocked-sites.h"
+#include "client-queue.h"
+#include "thread-pool.h"
 #include <stdio.h>
 #include <string.h>
 #include <arpa/inet.h>
@@ -11,6 +13,8 @@
 #define MAX_BLOCKED_SITES 100
 #define MAX_CACHE_SIZE 100
 
-void start_server(int port,const char* ip);
+int create_server(int port, const char *ip);
+
+void start_server(int port, const char *ip);
 
 #endif

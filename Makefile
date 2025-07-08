@@ -13,6 +13,7 @@ SRC = main.c \
 	  src/cache-store.c \
 	  src/blocked-sites.c \
 	  src/http-parser.c \
+	  src/html-rewriter.c \
 	  src/socket-utils.c \
 	  src/client-handler.c \
 	  src/http-request-response.c

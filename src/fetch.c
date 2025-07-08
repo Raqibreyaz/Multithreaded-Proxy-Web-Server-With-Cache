@@ -242,7 +242,22 @@ struct HttpResponse *fetch_cache_or_url(CacheLRU *cache, const char *url, int ma
     HttpResponse *res = fetch_url(url, max_redirects);
 
     // rewrite html links for our proxy
+    if (strcasestr(res->contentType, "text/html"))
+    {
+        ParsedURL parsed_url;
+        parse_url(url, &parsed_url);
 
+        // parsing html so that every 
+        char *new_body = rewrite_all_html(res->body, res->bodyLength, parsed_url.host);
+        
+        if (new_body)
+        {
+            free(res->body);
+            res->body = new_body;
+        }
+    }
+
+    // cache the response
     lru_insert(cache, url, res->body, res->bodyLength, res->contentType);
 
     return res;

@@ -1,14 +1,16 @@
 #include "../include/client-handler.h"
 
-void handle_client(int client_fd, CacheLRU *cache, char *blocked_sites[], int n_of_b_sites)
+void *handle_client(void *arg)
 {
+    ClientHandlerArgs *args = (ClientHandlerArgs *)arg;
+
     char *raw_request = NULL;
     char *data = NULL;
     HttpRequest *req = NULL;
     HttpResponse *res = NULL;
 
     size_t raw_len = 0;
-    raw_request = recv_request(client_fd, &raw_len);
+    raw_request = recv_request(args->client_fd, &raw_len);
     if (!raw_request)
     {
         printf("failed to receive request from client\n");
@@ -32,7 +34,7 @@ void handle_client(int client_fd, CacheLRU *cache, char *blocked_sites[], int n_
             goto cleanup;
         }
 
-        if (send_http_response(client_fd, data, data_size, "text/html") <= 0)
+        if (send_http_response(args->client_fd, data, data_size, "text/html") <= 0)
         {
             printf("failed to send response to client\n");
             goto cleanup;
@@ -47,7 +49,7 @@ void handle_client(int client_fd, CacheLRU *cache, char *blocked_sites[], int n_
             goto cleanup;
         }
 
-        if (send_http_response(client_fd, data, data_size, "image/x-icon") <= 0)
+        if (send_http_response(args->client_fd, data, data_size, "image/x-icon") <= 0)
         {
             printf("failed to send response to client\n");
             goto cleanup;
@@ -59,15 +61,19 @@ void handle_client(int client_fd, CacheLRU *cache, char *blocked_sites[], int n_
         parse_url(req->query, &parsed_url);
 
         // close the connection if the site is blocked
-        if (is_site_blocked(blocked_sites, n_of_b_sites, parsed_url.host))
+        if (is_site_blocked(args->blocked_sites, args->n_of_b_sites, parsed_url.host))
         {
             printf("closing connection as blocked site is requested\n");
             goto cleanup;
         }
 
-        res = fetch_cache_or_url(cache, req->query, MAX_REDIRECTS_ALLOWED);
+        // locking so that no other thread should alter the cache this time
+        pthread_mutex_lock(&(args->cache_lock));
+        res = fetch_cache_or_url(args->cache, req->query, MAX_REDIRECTS_ALLOWED);
+        pthread_mutex_unlock(&(args->cache_lock));
 
-        if (send_http_response(client_fd, res->body, res->bodyLength, res->contentType) <= 0)
+        // send response back to client
+        if (send_http_response(args->client_fd, res->body, res->bodyLength, res->contentType) <= 0)
         {
             printf("failed to respond data to client\n");
             goto cleanup;
@@ -89,6 +95,6 @@ cleanup:
     }
     if (raw_request)
         free(raw_request);
-    if (client_fd != -1)
-        close(client_fd);
+    if (args->client_fd != -1)
+        close(args->client_fd);
 }
