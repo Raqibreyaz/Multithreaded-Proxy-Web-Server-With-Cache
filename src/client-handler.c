@@ -14,13 +14,15 @@ void *handle_client(void *arg)
     if (!raw_request)
     {
         printf("failed to receive request from client\n");
-        return;
+        close(args->client_fd);
+        return NULL;
     }
 
     req = parse_http_request(raw_request, raw_len);
     if (!req)
     {
         printf("request parsing failed\n");
+        handle_sending_error(args->client_fd, BADCLNTREQ);
         goto cleanup;
     }
 
@@ -31,6 +33,7 @@ void *handle_client(void *arg)
         data = read_file("static/search.html", &data_size);
         if (!data)
         {
+            handle_sending_error(args->client_fd, INTRSERVERR);
             goto cleanup;
         }
 
@@ -46,6 +49,7 @@ void *handle_client(void *arg)
         data = read_file("static/favicon.ico", &data_size);
         if (!data)
         {
+            handle_sending_error(args->client_fd, INTRSERVERR);
             goto cleanup;
         }
 
@@ -64,13 +68,20 @@ void *handle_client(void *arg)
         if (is_site_blocked(args->blocked_sites, args->n_of_b_sites, parsed_url.host))
         {
             printf("closing connection as blocked site is requested\n");
+            handle_sending_error(args->client_fd, BLCKDSITEERR);
             goto cleanup;
         }
 
         // locking so that no other thread should alter the cache this time
-        pthread_mutex_lock(&(args->cache_lock));
+        pthread_mutex_lock(args->cache_lock);
         res = fetch_cache_or_url(args->cache, req->query, MAX_REDIRECTS_ALLOWED);
-        pthread_mutex_unlock(&(args->cache_lock));
+        pthread_mutex_unlock(args->cache_lock);
+
+        // if no response then close connection
+        if (!res){
+            handle_sending_error(args->client_fd,SERVRESFAIL);
+            goto cleanup;
+        }
 
         // send response back to client
         if (send_http_response(args->client_fd, res->body, res->bodyLength, res->contentType) <= 0)
@@ -97,4 +108,6 @@ cleanup:
         free(raw_request);
     if (args->client_fd != -1)
         close(args->client_fd);
+
+    return NULL;
 }

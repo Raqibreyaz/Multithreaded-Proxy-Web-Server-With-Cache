@@ -7,6 +7,7 @@ void init_client_queue(ClientQueue *q)
     pthread_cond_init(&q->not_empty, NULL);
 }
 
+// add client to queue by locking the queue
 void enqueue_client(ClientQueue *q, int client_sock)
 {
     ClientQueueNode *node = malloc(sizeof(ClientQueueNode));
@@ -27,15 +28,11 @@ void enqueue_client(ClientQueue *q, int client_sock)
     pthread_mutex_unlock(&q->lock);
 }
 
+// remove client from queue, No LOCKS used
 int dequeue_client(ClientQueue *q)
 {
-    pthread_mutex_lock(&q->lock);
-
-    // wait if queue is empty
-    while (is_queue_empty(q))
-    {
-        pthread_cond_wait(&q->not_empty, &q->lock);
-    }
+    if (is_queue_empty(q))
+        return -1;
 
     ClientQueueNode *node = q->front;
     int client_sock = node->client_sock;
@@ -45,10 +42,10 @@ int dequeue_client(ClientQueue *q)
         q->rear = NULL;
 
     free(node);
-    pthread_mutex_unlock(&q->lock);
     return client_sock;
 }
 
+// check whether given queue is empty or not
 int is_queue_empty(ClientQueue *client_queue)
 {
     return client_queue->front == NULL;

@@ -6,6 +6,7 @@
 // received response from server and send back to client
 int main(int argc, char const *argv[])
 {
+    // starting proxy server on wilcard address
     start_server(PORT, "0.0.0.0");
 
     return 0;

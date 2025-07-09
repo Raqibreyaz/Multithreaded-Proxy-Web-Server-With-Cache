@@ -15,7 +15,7 @@ typedef struct
     CacheLRU *cache;
     char **blocked_sites;
     int n_of_b_sites;
-    pthread_mutex_t cache_lock;
+    pthread_mutex_t* cache_lock;
 } ClientHandlerArgs;
 
 void* handle_client(void *args);

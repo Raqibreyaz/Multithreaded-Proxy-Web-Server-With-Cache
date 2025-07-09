@@ -70,6 +70,9 @@ int lru_contains(CacheLRU *cache, const char *url)
     CacheEntry *tmp = cache->head;
     char *filename = get_cache_filename(url);
 
+    char full_path[1024] = {0};
+    snprintf(full_path, sizeof(full_path) - 1, "%s/%s", CACHE_DIR, filename);
+
     // finding the node which has that url
     while (tmp &&
            tmp->url &&
@@ -77,6 +80,13 @@ int lru_contains(CacheLRU *cache, const char *url)
         tmp = tmp->next;
 
     free(filename);
+
+    // if >2 hours are passed of the cache then cache shouldn't exist
+    if (tmp && time_passed_in_hours_for_file(full_path) > 2)
+    {
+        printf("cache invalidated for: %s\n", url);
+        return 0;
+    }
 
     // return the node  if found or null
     return tmp != NULL;

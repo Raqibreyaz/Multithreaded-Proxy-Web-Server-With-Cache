@@ -2,6 +2,7 @@
 #define CLIENT_QUEUE_H
 
 #include <pthread.h>
+#include <stdlib.h>
 
 typedef struct ClientQueueNode {
     int client_sock;

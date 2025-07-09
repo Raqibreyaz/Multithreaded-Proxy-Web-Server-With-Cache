@@ -68,9 +68,12 @@ void write_file(const char *file_path, const char *data, size_t data_size)
     fclose(fptr);
 }
 
-// will return the no of minutes passed after the last modification of file
+// will return the no of hours passed after the last modification of file
 long time_passed_in_hours_for_file(const char *file_path)
 {
+    if (!file_path || !*file_path)
+        return 0;
+
     // taking stats of file
     struct stat st;
     stat(file_path, &st);
@@ -78,8 +81,11 @@ long time_passed_in_hours_for_file(const char *file_path)
     // getting the current time
     time_t current_time = time(NULL);
 
-    // returning the time passed in minutes
-    return difftime(current_time, st.st_mtime) / 3600;
+    // time difference in seconds
+    double time_diff_secs = difftime(current_time, st.st_mtime);
+
+    // returning the time passed in hours
+    return round(time_diff_secs / 3600);
 }
 
 int urls_are_equivalent(const char *a, const char *b)

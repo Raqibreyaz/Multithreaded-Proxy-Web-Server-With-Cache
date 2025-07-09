@@ -241,15 +241,18 @@ struct HttpResponse *fetch_cache_or_url(CacheLRU *cache, const char *url, int ma
     // fetch from remote server and cache the response
     HttpResponse *res = fetch_url(url, max_redirects);
 
+    if (!res)
+        return NULL;
+
     // rewrite html links for our proxy
     if (strcasestr(res->contentType, "text/html"))
     {
         ParsedURL parsed_url;
         parse_url(url, &parsed_url);
 
-        // parsing html so that every 
+        // parsing html so that every
         char *new_body = rewrite_all_html(res->body, res->bodyLength, parsed_url.host);
-        
+
         if (new_body)
         {
             free(res->body);

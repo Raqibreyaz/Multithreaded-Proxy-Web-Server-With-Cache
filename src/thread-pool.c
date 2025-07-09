@@ -20,6 +20,7 @@ void *worker_thread_func(void *arg)
         // remove the client from queue
         int client_sock = dequeue_client(shared_ctx->client_queue);
 
+        // when no client then skip
         if (client_sock < 0)
         {
             pthread_mutex_unlock(&(shared_ctx->client_queue->lock));

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <sys/stat.h>
 
 char *read_file(const char *file_path, size_t *file_size);

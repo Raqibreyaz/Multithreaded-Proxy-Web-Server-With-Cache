@@ -4,6 +4,7 @@
     "socket.h": "c",
     "cache-list.h": "c",
     "http-parser.h": "c",
-    "fetch.h": "c"
+    "fetch.h": "c",
+    "math.h": "c"
   }
 }

@@ -6,6 +6,7 @@
 #include "thread-pool.h"
 #include <stdio.h>
 #include <string.h>
+#include <signal.h>
 #include <arpa/inet.h>
 
 #define BACKLOG_SIZE 10

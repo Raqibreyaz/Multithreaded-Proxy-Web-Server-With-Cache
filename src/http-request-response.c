@@ -75,7 +75,7 @@ char *recv_response(int sockfd, SSL *ssl, size_t *out_len)
         // Read data into buffer
         if (ssl)
         {
-             n = SSL_read(ssl, buffer + total_read, buffer_size - total_read);
+            n = SSL_read(ssl, buffer + total_read, buffer_size - total_read);
         }
         else
         {
@@ -176,4 +176,85 @@ char *recv_request(int sockfd, size_t *out_len)
 
     *out_len = total_read;
     return buffer;
+}
+
+int send_error_message(int cfd, int status_code, const char *status_message, const char *body)
+{
+    char response[1024] = {0};
+
+    int len = snprintf(
+        response,
+        sizeof(response) - 1,
+        "HTTP/1.1 %d %s\r\n"
+        "Content-Type: text/plain\r\n"
+        "Content-Length: %zu\r\n"
+        "\r\n"
+        "%s",
+        status_code,
+        status_message,
+        strlen(body),
+        body);
+
+    if ((size_t)len >= sizeof(response))
+        return -1;
+
+    // returning the no of bytes sent
+    return send(cfd, response, len, 0);
+}
+
+void handle_sending_error(int cfd, int error_code)
+{
+    switch (error_code)
+    {
+    case SERVCONNFAIL:
+    {
+        send_error_message(cfd, 500, "Internal Server Error", "Failed to Establish Connection with Server");
+        break;
+    }
+    case SERVREQFAIL:
+    {
+        send_error_message(cfd, 500, "Internal Server Error", "Failed to Request to Remote Server");
+        break;
+    }
+    case SERVRESFAIL:
+    {
+        send_error_message(cfd, 500, "Internal Server Error", "Failed to Receive Data from Remote Server!\n");
+        break;
+    }
+    case BADSERVRES:
+    {
+        send_error_message(cfd, 500, "Internal Server Error", "Bad Response Received from Server");
+        break;
+    }
+    case REDIRERR:
+    {
+        send_error_message(cfd, 500, "Internal Server Error", "Too Many Redirects!");
+        break;
+    }
+    case CLNTREQFAIL:
+    {
+        send_error_message(cfd, 500, "Internal Server Error", "Failed to Receive Request From Client");
+        break;
+    }
+    case BADCLNTREQ:
+    {
+        send_error_message(cfd, 400, "Bad Request", "Invalid Request Received!");
+        break;
+    }
+    case MISQRYPRM:
+    {
+        send_error_message(cfd, 400, "Bad Request", "Query Url Must Be Present in this Case!");
+        break;
+    }
+    case INTRSERVERR:
+    {
+        send_error_message(cfd, 500, "Internal Server Error", "Something Went Wrong");
+        break;
+    }
+    case BLCKDSITEERR:
+    {
+        send_error_message(cfd, 400, "Site Blocked", "Site is Blocked By Proxy Blocker");
+        break;
+    }
+    }
 }

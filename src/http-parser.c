@@ -129,7 +129,6 @@ HttpRequest *parse_http_request(const char *rawRequest, size_t raw_len)
         if (rawRequest[i] == '\r' && rawRequest[i + 1] == '\n')
         {
             status_line_len = i + 2;
-            printf("got status line end and status line length\n");
             break;
         }
     }
