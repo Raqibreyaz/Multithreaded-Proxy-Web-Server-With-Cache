@@ -24,10 +24,10 @@ what i have yet:
 where current code breaks:
 
 - fixed size buffer not capable of getting full responses many times ✅(fixed)
-- fails to get binary data from cache file
+- fails to get binary data from cache file ✅(solved by sending as raw data)
 - fails to rewrite html according to our proxy
 - code became messy , not clearly broke in terms of solving individual problems like redirection, handling https connection and data transfer, serving cached response, serving fetched response ✅(introduced new design)
-- multithreaded code causes the application in hang state, currentl ssl code fails in multithreading environment,
+- multithreaded code causes the application in hang state, currentl ssl code fails in multithreading environment ✅(solved by thread pool)
 
 
 now current scenario:
@@ -37,10 +37,13 @@ now current scenario:
 - can respond from cache
 
 what to build next
-- rewrite html for proxy, injecting base tag and modifying links
-- removing ads tags
+- rewrite html for proxy and modifying links 
+❌
+- removing ads tags ❌
 - blocking website ✅
+- injecting base tag ✅
 
 new challange:
 - 1e10 is added at the html for no reason ✅ (it is the part of the data)
 - trailing / in url causes cache not found ✅(solved by sanitizing the url properly)
+

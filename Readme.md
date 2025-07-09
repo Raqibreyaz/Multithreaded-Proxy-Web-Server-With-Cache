@@ -1,97 +1,175 @@
-# 🚀 High-Performance Multi-Threaded HTTP Proxy Server
+# 🚀 Multi-Threaded HTTP Proxy Server in C
 
-## 🌍 What is it?
-A blazing-fast, **multi-threaded HTTP Proxy Server** that forwards client requests to target servers, caches responses using an **LRU strategy**, and serves cached responses to improve performance. Built with simplicity and reliability in mind.
+## 🌐 What Is It?
 
----
+A high-performance, multi-threaded HTTP proxy server written in **pure C** that:
 
-## 🤔 Why this project?
-Handling HTTP traffic efficiently while reducing redundant network requests is a real-world challenge. This project was built to:
+* Handles multiple clients using a **thread pool**
+* Caches HTTP responses using a **custom LRU strategy**
+* **Filters blocked sites**, manages cache files
+* **Rewrites HTML** to adapt links for the proxy path
+* Is now **Docker-compatible**, with a production-ready build system
 
-- 🔁 **Reduce bandwidth usage** by caching frequently requested responses  
-- 🔒 **Allow basic request filtering** for security and control  
-- ⚡ **Serve multiple clients concurrently** using **POSIX threads (pthreads)**  
-- 🧩 Provide a **clean abstraction** over low-level socket operations  
-- 🪶 Offer a **lightweight and educational alternative** to large proxy systems
+Built from scratch to learn low-level networking, multithreading, caching, HTML processing, and signal-safe server design.
 
 ---
 
-## ⚙️ How It Works
-1. Accepts HTTP client connections on a specified port.
-2. Spawns a new thread for each client connection (or uses a thread pool).
-3. Parses the request using a custom **HTTP parser**.
-4. Searches a **doubly linked list cache** for a matching response.
-5. If cached, sends the response to the client and marks it as recently used.
-6. If not cached, forwards the request to the destination server.
-7. Caches the response (with LRU eviction if necessary) and sends it to the client.
+## ✨ What’s New in This Version
+
+* ✅ **Thread Pool** support with bounded queue — no more per-client threads
+* ✅ **SIGPIPE ignored** to handle unexpected client disconnects gracefully
+* ✅ **HTML rewriting engine** that injects `<base>`, rewrites `href/src` links
+* ✅ **Cache invalidation** using last modified time of files
+* ✅ **Filename sanitization** for cached URLs with special characters
+* ✅ **Blocked site filtering** from a config file
+* ✅ **Custom error responses** sent to client
+* ✅ **Memory-safe HTTP parsing** and realloc-safe buffer growth
+* ✅ **Docker support** for containerized deployment
 
 ---
 
-## 🧱 Tech Stack
+## 🧱 Architecture Overview
 
-### 🔹 Custom Socket Library
-Simplifies raw socket operations with reusable abstractions:
+### 1. 🔌 Socket & Connection Handling
 
-- `createServer(port)` – Starts a listening socket  
-- `acceptClient()` – Accepts incoming connections  
-- `createConnection(host, port)` – Connects to remote servers  
-- `sendMessage()` / `recvAllData()` – Handles reliable I/O  
+* Listens on a configurable port.
+* Accepts clients and **queues them** to a thread-safe `ClientQueue`.
 
-### 🔹 Custom HTTP Parser
-- Parses HTTP methods, URLs, headers, and body  
-- Gracefully handles malformed input  
-- Builds HTTP request/response objects from raw data
+### 2. 🧵 Thread Pool
 
-### 🔹 🌀 LRU Caching System (O(n) Lookup)
-- Based on a **doubly linked list**  
-- Stores recently used responses  
-- Moves accessed nodes to the front (LRU strategy)  
-- Performs **O(n) linear search** on every lookup (no hashmap yet)  
-- Thread-safe via **mutex locking**
+* Fixed number of worker threads initialized at server startup.
+* Threads block on condition variable until a client is enqueued.
+* Each thread handles full client life-cycle (`recv`, fetch, rewrite, `send`).
 
-> ℹ️ Future versions may upgrade to a HashMap + LinkedList combo for true **O(1)** lookup and insertion.
+### 3. 📦 Caching (LRU)
+
+* Uses a **custom LRU cache** with linked list for eviction.
+* Shared between threads — guarded by a **mutex lock**.
+* Cache entries have timestamps to support **cache invalidation**.
+
+### 4. ✏️ HTML Rewriter(In Progress)
+
+* Injects `<base>` tag for relative path correction.
+* Rewrites `src`, `href`, `action`, `poster` etc. to include `/url=?` path.
+* Rewrites CSS `url(...)` inside `<style>` and attributes like `srcset`.
+
+### 5. 🛡️ Blocked Sites Filter
+
+* Reads a list of blocked domains from a JSON file.
+* Blocks them by returning a custom error message.
 
 ---
 
-## 🧪 Features
-✅ **Multi-threaded architecture** using `pthread`  
-✅ **Basic LRU cache mechanism** with linked list  
-✅ **High-performance socket communication**  
-✅ **Custom HTTP request/response parsing**  
-✅ **Signal handling and graceful shutdown**  
-✅ **Extensible design for further enhancements**
+## 🧪 Features at a Glance
+
+| Feature                  | Description                                      |
+| ------------------------ | ------------------------------------------------ |
+| ✅ Multi-threaded         | Thread pool using `pthread`                      |
+| ✅ Thread-safe cache      | Mutex-protected LRU cache                        |
+| ✅ HTML rewriting         | Base injection + relative path fixer             |
+| ✅ Docker support         | Portable, reproducible builds                    |
+| ✅ Signal handling        | Ignores `SIGPIPE`, handles clean shutdown        |
+| ✅ Cache invalidation     | Based on file modification timestamps            |
+| ✅ Error handling         | Custom error pages                               |
+| ✅ Clean modular design   | Separated concerns (server, fetch, cache, utils) |
+| ✅ URL sanitization       | Cache-safe filenames                             |
+| ✅ No 3rd-party libraries | Only POSIX, OpenSSL for HTTPS                    |
 
 ---
 
 ## 🚀 Getting Started
 
 ### 📦 Prerequisites
-- Linux/macOS  
-- GCC Compiler  
-- `make` tool
 
-### 🔧 Build & Run
+* Linux or WSL
+* GCC compiler (`gcc`)
+* `make` tool
+* Docker (optional)
+
+---
+
+### 🔧 Build & Run (Native)
+
 ```bash
 make
-./proxy <PORT>
+./server
 ```
 
 Example:
+
 ```bash
-./proxy 8080
+./server
 ```
+
+---
+
+### 🐳 Run with Docker (In Progress)
+
+#### 1. Build Docker Image
+
+```bash
+docker build -t my-proxy .
+```
+
+#### 2. Run Container
+
+```bash
+docker run -p 8080:8080 my-proxy
+```
+
+> Your proxy will now listen on port `8080` of your machine.
+
+---
+
+## 📁 File Structure
+
+```bash
+.
+├── src/                   # Source files (server, cache, fetcher, etc.)
+├── include/               # Header files
+├── build/                 # Compiled output
+├── blocked-sites.json     # List of blocked domains
+├── Makefile               # Build system
+├── Dockerfile             # For Docker builds
+├── README.md              # You're reading this
+└── dev-log.txt            # Maintained list of bug fixes + improvements
+```
+
+---
+
+## 📓 Dev Log Highlights
+
+Here are just a few of the issues solved during development:
+
+* 🧨 Crash on `send()` when client disconnects → `SIGPIPE` ignored
+* 📦 Stack smashing on unbounded copies → moved to heap + length-safe copies
+* 🔐 Cache not syncing across threads → used pointer-based locks
+* 📁 Special chars in URLs breaking filenames → sanitized URLs
+* 🔁 Clients blocked from retrying blocked sites → JSON-based filter
+* 🌐 Relative HTML links causing proxy confusion → `html-rewriter` system
+* 🧠 Complexity in parsing/fetching → modular `fetch()` abstraction
+
+> Full log is in [`dev-log.txt`](./dev-log.txt)
+
+---
+
+## 💡 Learning Outcomes
+
+* Thread synchronization with mutexes and condition variables
+* Memory-safe string operations in C
+* Handling real-world edge cases in socket I/O
+* Parsing and transforming HTML without external libs
+* Designing a maintainable multi-file C project
+* Dockerizing a raw C-based network service
 
 ---
 
 ## 🤝 Contributing
-Pull requests and ideas are welcome!
 
-1. Fork this repo  
-2. Create a feature or fix branch  
-3. Submit a PR
+Pull requests and feature ideas are welcome!
 
----
-
-💥 **Experience raw socket programming, thread handling, and caching in C!**
+1. Fork the repo
+2. Create a feature or fix branch
+3. Submit a PR with a clear title and description
 
 ---

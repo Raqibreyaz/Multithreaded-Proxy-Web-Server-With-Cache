@@ -46,8 +46,7 @@ void *worker_thread_func(void *arg)
         args->cache_lock = shared_ctx->cache_lock;
         args->n_of_b_sites = shared_ctx->n_of_b_sites;
 
-        if (client_sock != -1)
-            handle_client(args);
+        handle_client((void *)args);
 
         free(args);
     }
