@@ -1,0 +1,54 @@
+- issue: send(), recv() crashes when client diconnects in between
+    fix: used signal(SIGPIPE,SIG_IGN) to ignore broken pipe error from killing program
+
+- issue: stack smashing error, occured when written beyond allocated space on   stack
+    fix: size was unspecified so i used heap memory allocation
+
+- issue: undefined reference error for ceil, ssl even after adding headers
+    fix: added compilation flags so that compiler can know where to refer the code as header file is giving only the heeaders
+
+- issue: code fails to lock the LRU cache
+    fix: gave reference of lock var across threads not the value
+
+- issue: client wasn't getting actually what went wrong like  failed connection to remote server or any server side failure
+    fix: added custom error senders to notify client about errors
+
+- issue: server wasn't able to distinguish stale cache
+    fix: added cache invalidation by checking the last file modification time
+
+- issue: buffer was getting full and on getting response from remote servers many times in case of transfer encoding
+    fix: used realloc to increase size of buffer safely
+
+- issue: code became messy when dealing with remote server request and response
+    fix: created a javascript like fetch function which gets url and returns heap allocated response pointer
+
+- issue: working with LRU cache became complex, when only one struct for cache node
+    fix: used another struct for complete list tracking by head + tail + size all in same struct
+
+- issue: previously were storing redundant data from client's request and parsing them takes time 
+    fix: stored minimal data like only url + method etc. and removed all
+
+- issue: server was not stopping clients to access blocked sites
+    fix: created a dedicated module to get blocked sites from "blocked-sites.json" file and checking for blocked sites
+
+- issue: server was not able to match same urls like google.com and google.com/ due to the trailing '/'
+    fix: added a utility to check equivalency of urls
+
+- issue: we are storing cached data into files with the name of url user requested, but this created a problem with special chars of url incompatibility for file name, ex: https://google.com?xyz=...
+    fix: created a filename sanitizer utility to sanitize all the possible special chars from url with '-'
+
+- issue: const qualifier causes problems while freeing the memory
+    fix: removed const qualifier from the pointer   
+
+- issue: server was serving only 1 client at a time causing other clients to wait this increase request starvation when a client takes much time
+    fix: used a thread pool + client queue so that we have a specific no of threads ready to server clients everytime
+
+- issue: thread pool causes race condition when working with the shared LRU cache across threads
+    fix: used mutex locks to lock shared resource so that only one thread can access it a time
+
+* info: client handler function can have non void* return type and arg but i stick with it so that it can be directly passed as a callback handler to threads while creating threads
+
+issue: html was having relative urls according to the website which causes browser to request our server in wrong params, ex: /static/wikipedia.png
+    fix: a quick fix is adding <base href="/?url=https://host/"> but this 
+         only works for links which are not absolute and not start with / like this, static/favicon.ico.
+         so a reliable solution is to rewrite whole html where invalid links are there, tried to implement this but this increase excessive complexity in dealing the task manually and not very efficient

@@ -1,15 +1,24 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g -pthread -MMD -MP
+CFLAGS = -Wall -Wextra -g -Iinclude -pthread -MMD -MP
 BUILD_DIR = build
 OBJ_DIR = $(BUILD_DIR)/obj
 BIN_DIR = $(BUILD_DIR)/bin
 
 # Source files
 SRC = main.c \
-      cache-list/cache-list.c \
-      http-parser/http-parser.c \
-      socket-library/socket-library.c \
-      utils/custom-utilities.c
+	  src/server.c \
+	  src/fetch.c \
+	  src/cache.c \
+	  src/utils.c \
+	  src/thread-pool.c \
+	  src/client-queue.c \
+	  src/cache-store.c \
+	  src/blocked-sites.c \
+	  src/http-parser.c \
+	  src/html-rewriter.c \
+	  src/socket-utils.c \
+	  src/client-handler.c \
+	  src/http-request-response.c
 
 # Generate object file paths
 OBJ_FILES = $(patsubst %.c, $(OBJ_DIR)/%.o, $(SRC))
@@ -31,7 +40,7 @@ $(OBJ_DIR)/%.o: %.c
 # Link the final executable
 $(TARGET): $(OBJ_FILES)
 	@echo "Linking Target: $(Target)"
-	$(CC) $(CFLAGS) $(OBJ_FILES) -o $(TARGET) -lssl -lcrypto
+	$(CC) $(CFLAGS) $(OBJ_FILES) -o $(TARGET) -lssl -lcrypto -lm
 
 # Include dependency files if they exist
 -include $(DEP_FILES)

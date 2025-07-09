@@ -15,6 +15,7 @@ HttpResponse *parse_http_response(const char *raw, size_t raw_len)
     const char *header_end = NULL;
     size_t header_len = 0;
 
+    // finding the headers end
     for (size_t i = 0; i + 3 < raw_len; ++i)
     {
         if (raw[i] == '\r' && raw[i + 1] == '\n' && raw[i + 2] == '\r' && raw[i + 3] == '\n')
@@ -25,13 +26,15 @@ HttpResponse *parse_http_response(const char *raw, size_t raw_len)
         }
     }
 
-    if (!header_end)
+    // invalid HTTP response
+    if (!header_end || header_end < raw || header_end > raw + raw_len)
     {
         free(res);
-        return NULL; // invalid HTTP response
+        printf("no header end found, invalid response\n");
+        return NULL;
     }
 
-    // Step 2: Make a modifiable copy of the header section
+    // Step 2: Make a modifiable copy of the status+header section
     char *headers = malloc(header_len + 1);
     if (!headers)
     {
@@ -90,18 +93,131 @@ HttpResponse *parse_http_response(const char *raw, size_t raw_len)
 
     // Step 5: Handle body
     size_t body_len = raw_len - (header_end - raw);
-    res->body = malloc(body_len);
+    res->body = calloc(body_len + 1, 1);
     if (!res->body)
         goto fail;
 
     memcpy(res->body, header_end, body_len);
+    res->body[body_len] = '\0';
     res->bodyLength = body_len;
 
     free(headers);
     return res;
 
 fail:
+    free_http_response(res);
     free(headers);
     free(res);
     return NULL;
+}
+
+HttpRequest *parse_http_request(const char *rawRequest, size_t raw_len)
+{
+    if (!rawRequest || rawRequest[0] == '\0')
+        return NULL;
+
+    // allocated space for request object
+    HttpRequest *req = calloc(1, sizeof(HttpRequest));
+    if (!req)
+        return NULL;
+
+    size_t status_line_len = 0;
+
+    // finding the status line end
+    for (size_t i = 0; i + 2 < raw_len; ++i)
+    {
+        if (rawRequest[i] == '\r' && rawRequest[i + 1] == '\n')
+        {
+            status_line_len = i + 2;
+            break;
+        }
+    }
+
+    // allocate space for the status line
+    char *line = calloc(status_line_len + 1, 1);
+    if (!line)
+    {
+        free(req);
+        return NULL;
+    }
+
+    // copy the whole status line
+    memcpy(line, rawRequest, status_line_len);
+    line[status_line_len] = '\0';
+
+    // now splitting the status line
+    char *saveptr = 0;
+    char *method = strtok_r(line, " ", &saveptr);
+    char *fullPath = strtok_r(NULL, " ", &saveptr);
+    char *version = strtok_r(NULL, "\r\n", &saveptr);
+
+    if (!method || !fullPath || !version)
+    {
+        printf("invalid request received\n");
+        free(line);
+        free(req);
+        return NULL;
+    }
+
+    strncpy(req->method, method, sizeof(req->method) - 1);
+    strncpy(req->http_version, version, sizeof(req->http_version) - 1);
+
+    // Split path and query
+    char *qmark = strchr(fullPath, '?');
+    if (qmark)
+    {
+        size_t pathLen = qmark - fullPath;
+        strncpy(req->path, fullPath, pathLen);
+        req->path[pathLen] = '\0';
+
+        char *url_start = strstr(qmark, "url=");
+        if (url_start)
+        {
+            url_start += 4;
+            req->query = strdup(url_start);
+        }
+        else
+        {
+            req->query = NULL;
+            printf("got invalid query params: %s\n", qmark);
+        }
+    }
+    else
+    {
+        strncpy(req->path, fullPath, sizeof(req->path) - 1);
+        req->query = NULL;
+    }
+
+    free(line);
+    return req;
+}
+
+void free_http_response(HttpResponse *res)
+{
+    if (res && res->body)
+    {
+        free(res->body);
+        res->body = NULL;
+    }
+}
+
+void free_http_request(HttpRequest *req)
+{
+    if (req && req->query)
+    {
+        free(req->query);
+        req->query = NULL;
+    }
+}
+
+void init_http_response(HttpResponse *res)
+{
+    memset(res, 0, sizeof(HttpResponse));
+    res->body = NULL;
+}
+
+void init_http_request(HttpRequest *req)
+{
+    memset(req, 0, sizeof(HttpRequest));
+    req->query = NULL;
 }
