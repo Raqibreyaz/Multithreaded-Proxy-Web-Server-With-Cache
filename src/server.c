@@ -1,5 +1,11 @@
 #include "../include/server.h"
 
+void server_shutdown_handler(int sig)
+{
+    printf("gracefull shutting down server...\n");
+    exit(EXIT_SUCCESS);
+}
+
 int create_server(int port, const char *ip)
 {
     if (port <= 0 || !ip || !*ip)
@@ -93,6 +99,9 @@ void start_server(int port, const char *ip)
 
     // ignore server crash if client disconnects in between
     signal(SIGPIPE, SIG_IGN);
+
+    // gracefully shutdown the server on ctrl+c
+    signal(SIGINT, server_shutdown_handler);
 
     while (1)
     {

@@ -1,27 +1,42 @@
-# Step 1: GCC compiler ke saath base image
-FROM gcc:13 AS builder
+FROM gcc:13-bookworm AS builder
+
+# this will be working dir
+WORKDIR /app
+
+# Copy entire project including code + data files
+COPY . .
+
+# install libssl-dev for -lssl -lcrypto
+# rm -rf for removing  package metadata as it is no longer required
+RUN apt-get update && \
+    apt-get install -y libssl-dev && \
+    rm -rf /var/lib/lists/*
+
+# Build the project
+RUN make all
+
+
+# using a lightweight os for running executable
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Poora project copy karo
-COPY . .
+# installing runtime ssl-libs only (not-dev versions)
+RUN apt-get update && \
+    apt-get install -y libssl3 && \
+    rm -rf /var/lib/apt/lists/*
 
-# Makefile se build karo
-RUN make
-
-# Step 2: Minimal image
-FROM debian:bookworm-slim
-
-# OpenSSL library install karo (runtime ke liye)
-RUN apt-get update && apt-get install -y libssl-dev && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /server
-
-# Final binary copy karo
+# copying the executable to our new environment
 COPY --from=builder /app/server .
 
-# Port expose karo (agar server 8080 pe chal raha hai)
-EXPOSE 8080
+# copying blocked-sites file
+COPY --from=builder /app/blocked-sites.json .
 
-# Binary run karo
+# copying static files dir like home page, favicon.ico
+COPY --from=builder /app/static ./static
+
+# Expose the port
+EXPOSE 4040
+
+# Run the compiled binary
 CMD ["./server"]

@@ -14,6 +14,8 @@
 #define MAX_BLOCKED_SITES 100
 #define MAX_CACHE_SIZE 100
 
+void server_shutdown_handler(int sig);
+
 int create_server(int port, const char *ip);
 
 void start_server(int port, const char *ip);

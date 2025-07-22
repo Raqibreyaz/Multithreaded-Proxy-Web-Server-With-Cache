@@ -82,9 +82,11 @@ int lru_contains(CacheLRU *cache, const char *url)
     free(filename);
 
     // if >2 hours are passed of the cache then cache shouldn't exist
+    // remove entry from the cache as new entry can cause duplication
     if (tmp && time_passed_in_hours_for_file(full_path) > 2)
     {
         printf("cache invalidated for: %s\n", url);
+        lru_delete(cache, url);
         return 0;
     }
 
@@ -207,13 +209,21 @@ void lru_delete(CacheLRU *cache, const char *url)
     {
         if (strcmp(curr->url, filename) == 0)
         {
+            // point the prev node's next to current's next
             if (curr->prev)
                 curr->prev->next = curr->next;
+
+            // if here it means head this is
+            // move head to next
             else
                 cache->head = curr->next;
 
+            // point current's next's prev to current's prev
             if (curr->next)
                 curr->next->prev = curr->prev;
+
+            // if here it means tail this is
+            // move tail to prev
             else
                 cache->tail = curr->prev;
 

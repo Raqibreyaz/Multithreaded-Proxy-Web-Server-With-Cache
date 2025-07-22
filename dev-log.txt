@@ -48,7 +48,16 @@
 
 * info: client handler function can have non void* return type and arg but i stick with it so that it can be directly passed as a callback handler to threads while creating threads
 
-issue: html was having relative urls according to the website which causes browser to request our server in wrong params, ex: /static/wikipedia.png
+- issue: html was having relative urls according to the website which causes browser to request our server in wrong params, ex: /static/wikipedia.png
     fix: a quick fix is adding <base href="/?url=https://host/"> but this 
          only works for links which are not absolute and not start with / like this, static/favicon.ico.
          so a reliable solution is to rewrite whole html where invalid links are there, tried to implement this but this increase excessive complexity in dealing the task manually and not very efficient
+
+- issue: duplicate cache entries when adding new entry after cache become stale and invaldated
+    fix: solved by removing the cache entry from lru_cache when cache became invalidated
+
+- issue: SIGINT not working when server is running in docker container
+    fix: added SIGINT handler function to gracefully handle server shutdown SIGINT
+
+- issue: server is not capable of getting port from passed env vars
+    fix: used getenv() to get the port if passed otherwise default port will be selected
