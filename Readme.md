@@ -1,175 +1,178 @@
-# 🚀 Multi-Threaded HTTP Proxy Server in C
+# 🌐 ProxyRaQ
 
-## 🌐 What Is It?
-
-A high-performance, multi-threaded HTTP proxy server written in **pure C** that:
-
-* Handles multiple clients using a **thread pool**
-* Caches HTTP responses using a **custom LRU strategy**
-* **Filters blocked sites**, manages cache files
-* **Rewrites HTML** to adapt links for the proxy path
-* Is now **Docker-compatible**, with a production-ready build system
-
-Built from scratch to learn low-level networking, multithreading, caching, HTML processing, and signal-safe server design.
+A **multithreaded proxy web server** built entirely in **pure C**, designed for performance, modularity, and scalability.
+Supports **HTTP/HTTPS requests**, **caching with LRU strategy**, **site blocking**, and **high concurrency handling**.
 
 ---
 
-## ✨ What’s New in This Version
+## ✨ Features
 
-* ✅ **Thread Pool** support with bounded queue — no more per-client threads
-* ✅ **SIGPIPE ignored** to handle unexpected client disconnects gracefully
-* ✅ **HTML rewriting engine** that injects `<base>`, rewrites `href/src` links
-* ✅ **Cache invalidation** using last modified time of files
-* ✅ **Filename sanitization** for cached URLs with special characters
-* ✅ **Blocked site filtering** from a config file
-* ✅ **Custom error responses** sent to client
-* ✅ **Memory-safe HTTP parsing** and realloc-safe buffer growth
-* ✅ **Docker support** for containerized deployment
+* **Multithreaded Proxy Server** – Handles multiple client connections concurrently using a **thread pool**.
+* **Custom Fetch Utility (C-based)** – Fetches remote websites without external libraries, mimicking `fetch` behavior.
+* **HTTP Parser** – Minimal and custom-built parser tailored to proxy needs.
+* **LRU-based Cache Strategy**
 
----
-
-## 🧱 Architecture Overview
-
-### 1. 🔌 Socket & Connection Handling
-
-* Listens on a configurable port.
-* Accepts clients and **queues them** to a thread-safe `ClientQueue`.
-
-### 2. 🧵 Thread Pool
-
-* Fixed number of worker threads initialized at server startup.
-* Threads block on condition variable until a client is enqueued.
-* Each thread handles full client life-cycle (`recv`, fetch, rewrite, `send`).
-
-### 3. 📦 Caching (LRU)
-
-* Uses a **custom LRU cache** with linked list for eviction.
-* Shared between threads — guarded by a **mutex lock**.
-* Cache entries have timestamps to support **cache invalidation**.
-
-### 4. ✏️ HTML Rewriter(In Progress)
-
-* Injects `<base>` tag for relative path correction.
-* Rewrites `src`, `href`, `action`, `poster` etc. to include `/url=?` path.
-* Rewrites CSS `url(...)` inside `<style>` and attributes like `srcset`.
-
-### 5. 🛡️ Blocked Sites Filter
-
-* Reads a list of blocked domains from a JSON file.
-* Blocks them by returning a custom error message.
+  * **In-Memory (Linked List)** for quick lookups.
+  * **Disk-based Storage + Persistence** for large resources.
+  * **Cache Invalidation** logic for expired/blocked entries.
+* **Site Blocking** – Reads `blocked_sites.json` to deny access to restricted domains.
+* **SSL/TLS Support** – Wraps TCP sockets with SSL for HTTPS connections.
+* **Dynamic Memory Allocation** – Efficient fetching of large websites.
+* **Modular Code Structure** – Each component (parsing, caching, networking, SSL, thread pool) is an independent module.
+* 🐳 **Dockerized** for easy setup, deployment, and portability.
 
 ---
 
-## 🧪 Features at a Glance
+## 🏗️ Architecture
 
-| Feature                  | Description                                      |
-| ------------------------ | ------------------------------------------------ |
-| ✅ Multi-threaded         | Thread pool using `pthread`                      |
-| ✅ Thread-safe cache      | Mutex-protected LRU cache                        |
-| ✅ HTML rewriting         | Base injection + relative path fixer             |
-| ✅ Docker support         | Portable, reproducible builds                    |
-| ✅ Signal handling        | Ignores `SIGPIPE`, handles clean shutdown        |
-| ✅ Cache invalidation     | Based on file modification timestamps            |
-| ✅ Error handling         | Custom error pages                               |
-| ✅ Clean modular design   | Separated concerns (server, fetch, cache, utils) |
-| ✅ URL sanitization       | Cache-safe filenames                             |
-| ✅ No 3rd-party libraries | Only POSIX, OpenSSL for HTTPS                    |
+```
+                ┌───────────────────┐
+Client Request →│ ProxyRaQ Listener │─┐
+                └───────────────────┘ │
+                         │             │
+                         ▼             │
+                 ┌───────────────┐     │
+                 │ Thread Pool    │     │
+                 └───────────────┘     │
+                         │             │
+   ┌───────────────┐  ┌──────────────┐ │
+   │ HTTP Parser    │  │ Site Blocker │ │
+   └───────────────┘  └──────────────┘ │
+                         │             │
+                         ▼             │
+            ┌───────────────────────────────┐
+            │ Cache (LRU + Disk Persistence) │
+            └───────────────────────────────┘
+                         │
+                         ▼
+               ┌──────────────────┐
+               │ Remote Web Server │
+               └──────────────────┘
+```
+* **Client → ProxyRaQ → Remote Server → ProxyRaQ → Client**
+* Handles requests concurrently using a **thread pool**.
+* Stores responses in **LRU cache** (RAM + disk) for faster future lookups.
+* Filters requests if they match entries in the **blocked sites list**.
+* Supports both **HTTP & HTTPS** traffic.
+
+---
+
+## 📊 Benchmarks
+
+The proxy was tested locally using **ApacheBench (ab)** on a **4-core CPU**.
+We measured throughput and latency with different concurrency levels.
+
+| Clients (Concurrency) | Requests | Requests/sec | Mean Latency | Longest Request | Failures |
+| --------------------- | -------- | ------------ | ------------ | --------------- | -------- |
+| **100**               | 10,000   | \~2261 req/s | \~44 ms      | 876 ms          | 0        |
+| **1000**              | 10,000   | \~2172 req/s | \~460 ms     | 890 ms          | 0        |
+
+✅ Even under **1000 concurrent clients**, ProxyRaQ handled all **10k requests without failure**.
+⚙️ Increasing backlog size from **10 → 1024** was essential to support high concurrency.
+
+---
+
+### 📸 Benchmark Screenshot
+
+![Benchmark Screenshot](./static/ProxyRaQ-Test.png)
+*(1000 concurrent clients, 10k requests, no failures)*
+
+---
+
+## 🔍 Observations
+
+* Raising the **socket backlog** (`listen(fd, backlog)`) from `10` → `1024` improved stability under load.
+* The proxy maintains **consistent throughput (\~2k req/s)** even at **10× concurrency**.
+* Latency scales linearly with concurrency, as expected due to queuing + thread pool scheduling.
+* No failed requests in either scenario, demonstrating robust handling.
+
+---
+
+## 🐳 Docker Support
+
+ProxyRaQ is fully **Dockerized** for easy deployment.
+
+### Build Image
+
+```bash
+docker build -t proxyraq .
+```
+
+### Run Container
+
+```bash
+docker run -p 4040:4040 proxyraq
+```
+
+Now the proxy server will be running at:
+👉 `http://localhost:4040/?url=https://example.com`
 
 ---
 
 ## 🚀 Getting Started
 
-### 📦 Prerequisites
+### 1. Clone Repository
 
-* Linux or WSL
-* GCC compiler (`gcc`)
-* `make` tool
-* Docker (optional)
+```bash
+git clone https://github.com/yourusername/proxyraq.git
+cd proxyraq
+```
 
----
-
-### 🔧 Build & Run (Native)
+### 2. Build
 
 ```bash
 make
-./server
 ```
 
-Example:
+### 3. Run
 
 ```bash
-./server
+PORT=4040 ./server
 ```
 
----
-
-### 🐳 Run with Docker (In Progress)
-
-#### 1. Build Docker Image
+### 4. Test with ApacheBench
 
 ```bash
-docker build -t my-proxy .
-```
-
-#### 2. Run Container
-
-```bash
-docker run -p 8080:8080 my-proxy
-```
-
-> Your proxy will now listen on port `8080` of your machine.
-
----
-
-## 📁 File Structure
-
-```bash
-.
-├── src/                   # Source files (server, cache, fetcher, etc.)
-├── include/               # Header files
-├── build/                 # Compiled output
-├── blocked-sites.json     # List of blocked domains
-├── Makefile               # Build system
-├── Dockerfile             # For Docker builds
-├── README.md              # You're reading this
-└── dev-log.txt            # Maintained list of bug fixes + improvements
+ab -n 10000 -c 100 "http://localhost:4040/?url=https://wikipedia.org"
 ```
 
 ---
 
-## 📓 Dev Log Highlights
+## 📂 Project Structure
 
-Here are just a few of the issues solved during development:
-
-* 🧨 Crash on `send()` when client disconnects → `SIGPIPE` ignored
-* 📦 Stack smashing on unbounded copies → moved to heap + length-safe copies
-* 🔐 Cache not syncing across threads → used pointer-based locks
-* 📁 Special chars in URLs breaking filenames → sanitized URLs
-* 🔁 Clients blocked from retrying blocked sites → JSON-based filter
-* 🌐 Relative HTML links causing proxy confusion → `html-rewriter` system
-* 🧠 Complexity in parsing/fetching → modular `fetch()` abstraction
-
-> Full log is in [`dev-log.txt`](./dev-log.txt)
-
----
-
-## 💡 Learning Outcomes
-
-* Thread synchronization with mutexes and condition variables
-* Memory-safe string operations in C
-* Handling real-world edge cases in socket I/O
-* Parsing and transforming HTML without external libs
-* Designing a maintainable multi-file C project
-* Dockerizing a raw C-based network service
+```
+proxyraq/
+├── src/
+│   ├── main.c
+│   ├── http_parser.c
+│   ├── cache.c
+│   ├── thread_pool.c
+│   ├── ssl_wrapper.c
+│   └── site_blocker.c
+├── include/
+│   ├── http_parser.h
+│   ├── cache.h
+│   ├── thread_pool.h
+│   ├── ssl_wrapper.h
+│   └── site_blocker.h
+├── blocked_sites.json
+├── Makefile
+├── Dockerfile
+└── README.md
+```
 
 ---
 
-## 🤝 Contributing
+## 📌 Future Improvements
 
-Pull requests and feature ideas are welcome!
+* 📊 Add monitoring & metrics dashboard.
+* 🧵 Support for asynchronous I/O (epoll-based).
+* 📂 Smarter cache eviction strategies.
+* 🔐 Better TLS certificate management.
 
-1. Fork the repo
-2. Create a feature or fix branch
-3. Submit a PR with a clear title and description
+---
 
+## 👨‍💻 Author
+
+Built with ❤️ in **C** by **Raquib**
 ---

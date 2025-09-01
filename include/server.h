@@ -9,7 +9,7 @@
 #include <signal.h>
 #include <arpa/inet.h>
 
-#define BACKLOG_SIZE 10
+#define BACKLOG_SIZE 1024
 #define MAX_CLIENTS 10
 #define MAX_BLOCKED_SITES 100
 #define MAX_CACHE_SIZE 100

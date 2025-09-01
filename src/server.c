@@ -31,6 +31,7 @@ int create_server(int port, const char *ip)
     if (inet_pton(AF_INET, ip, (struct in_addr *)&(server_addr.sin_addr)) <= 0)
     {
         perror("inet_pton");
+        close(sfd);
         return -1;
     }
 
@@ -41,12 +42,14 @@ int create_server(int port, const char *ip)
     if (bind(sfd, (struct sockaddr *)&server_addr, addrLen) < 0)
     {
         perror("bind");
+        close(sfd);
         return -1;
     }
 
     if (listen(sfd, BACKLOG_SIZE) < 0)
     {
         perror("listen");
+        close(sfd);
         return -1;
     }
 
